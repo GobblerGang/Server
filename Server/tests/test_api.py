@@ -1,6 +1,6 @@
 import pytest
-from Server import app, db
-from models import User
+from Server import app
+from Server.models import db, User
 
 @pytest.fixture
 def client():
@@ -9,10 +9,9 @@ def client():
     app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///:memory:'  # Use an in-memory SQLite database for testing
     with app.test_client() as client:
         with app.app_context():
+            db.drop_all()  # Drop all tables to ensure a clean slate
             db.create_all()  # Create tables
         yield client
-        with app.app_context():
-            db.drop_all()  # Clean up tables after tests
 
 def test_add_user_success(client):
     # Test adding a new user successfully
