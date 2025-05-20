@@ -24,8 +24,10 @@ def add_user():
     if not re.match(r"[^@]+@[^@]+\.[^@]+", email):
         return jsonify({'error': 'Invalid email format'}), 400
     
-    if len(password) < 12:
-        return jsonify({'error': 'Password too short'}), 400
+    pattern = r'^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{12,}$'
+    if not re.match(pattern, password):
+        return jsonify({'error': 'Password must be 12+ chars, with uppercase, lowercase, digit, and special char'}), 400
+
 
     hashed_password = generate_password_hash(password, method='pbkdf2:sha256', salt_length=16)
 
