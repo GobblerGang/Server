@@ -2,10 +2,11 @@ from flask import Blueprint, request, jsonify
 from werkzeug.security import generate_password_hash
 from .models import db, User
 import uuid
+import re
 
 api = Blueprint('api', __name__)
 
-@api.route('/api/users', methods=['POST'])
+@api.route('/api/users/sign-up', methods=['POST'])
 def add_user():
     data = request.get_json()
 
@@ -19,8 +20,14 @@ def add_user():
     existing_user = User.query.filter_by(email=email).first()
     if existing_user:
         return jsonify({'error': 'User with this email already exists'}), 409
+    
+    if not re.match(r"[^@]+@[^@]+\.[^@]+", email):
+        return jsonify({'error': 'Invalid email format'}), 400
+    
+    if len(password) < 12:
+        return jsonify({'error': 'Password too short'}), 400
 
-    hashed_password = generate_password_hash(password)
+    hashed_password = generate_password_hash(password, method='pbkdf2:sha256', salt_length=16)
 
     new_user = User(
         id=str(uuid.uuid4()),  

@@ -15,7 +15,7 @@ def client():
 
 def test_add_user_success(client):
     # Test adding a new user successfully
-    response = client.post('/api/users', json={
+    response = client.post('/api/users/sign-up', json={
         'email': 'test@example.com',
         'name': 'Test User',
         'password': 'securepassword'
@@ -27,7 +27,7 @@ def test_add_user_success(client):
 
 def test_add_user_missing_fields(client):
     # Test adding a user with missing fields
-    response = client.post('/api/users', json={
+    response = client.post('/api/users/sign-up', json={
         'email': 'test@example.com'
     })
     assert response.status_code == 400
@@ -36,12 +36,12 @@ def test_add_user_missing_fields(client):
 
 def test_add_user_duplicate_email(client):
     # Test adding a user with a duplicate email
-    client.post('/api/users', json={
+    client.post('/api/users/sign-up', json={
         'email': 'test@example.com',
         'name': 'Test User',
         'password': 'securepassword'
     })
-    response = client.post('/api/users', json={
+    response = client.post('/api/users/sign-up', json={
         'email': 'test@example.com',
         'name': 'Another User',
         'password': 'anotherpassword'
