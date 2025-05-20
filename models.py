@@ -10,7 +10,6 @@ class User(db.Model):
     name = db.Column(db.String(255), nullable=False)
     password = db.Column(db.String(255), nullable=False)
     
-    # Relationship to files (one-to-many)
     files = db.relationship('File', backref='owner', lazy=True)
     
     def __repr__(self):
@@ -23,9 +22,8 @@ class File(db.Model):
     ownerId = db.Column(db.String(36), db.ForeignKey('user.id'), nullable=False)
     name = db.Column(db.String(255), nullable=False)
     type = db.Column(db.String(50), nullable=False)
-    enc_key = db.Column(LargeBinary, nullable=False)  # For storing encryption keys
+    enc_key = db.Column(LargeBinary, nullable=False) 
     
-    # Relationship to shared files (many-to-many through bridge_shared_files)
     shared_with = db.relationship('SharedFile', backref='file', lazy=True)
     
     def __repr__(self):
@@ -38,8 +36,6 @@ class SharedFile(db.Model):
     userId = db.Column(db.String(36), db.ForeignKey('user.id'), nullable=False)
     fileId = db.Column(db.String(36), db.ForeignKey('files.id'), nullable=False)
     
-    # Additional metadata if needed
-    # created_at = db.Column(db.DateTime, default=datetime.utcnow)
     
     def __repr__(self):
         return f'<SharedFile user:{self.userId} file:{self.fileId}>'
