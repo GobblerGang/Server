@@ -1,4 +1,4 @@
-from app import db
+from Server import db
 import uuid
 from sqlalchemy import LargeBinary
 

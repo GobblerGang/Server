@@ -1,9 +1,8 @@
 from flask import Blueprint, request, jsonify
 from werkzeug.security import generate_password_hash
-from models import db, User
+from .models import db, User
 import uuid
 
-# Create a Blueprint for the API
 api = Blueprint('api', __name__)
 
 @api.route('/api/users', methods=['POST'])
