@@ -1,4 +1,4 @@
-from app import app
+from Server import app
 import os
 
 @app.route('/')
