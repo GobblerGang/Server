@@ -1,5 +1,7 @@
 import socket
 import ssl
+import socket
+import ssl
 from flask import Flask, request, jsonify, send_file, session
 from flask_cors import CORS
 import os
@@ -13,6 +15,11 @@ CORS(app)
 # Configuration
 app.secret_key = 'your-secret-key'  # Change this in production!
 app.config['UPLOAD_FOLDER'] = 'uploads'
+jwt = JWTManager(app)
+
+# SSL Configuration
+ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+ssl_context.load_cert_chain(certfile="server.crt", keyfile="server.key")
 jwt = JWTManager(app)
 
 # SSL Configuration
@@ -256,3 +263,4 @@ if __name__ == '__main__':
     print("\nPress Ctrl+C to stop the server")
     print("===========================\n")
     app.run(host='0.0.0.0', port=4433, ssl_context=ssl_context, debug=True)
+    app.run(debug=True)
