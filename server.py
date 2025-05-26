@@ -1,20 +1,22 @@
 import socket
 import ssl
-from flask import Flask, request, jsonify, send_file
+from flask import Flask, request, jsonify, send_file, session
 from flask_cors import CORS
-from flask_jwt_extended import JWTManager, create_access_token, jwt_required, get_jwt_identity
 import os
 import bcrypt
 import json
-from datetime import timedelta
 from werkzeug.utils import secure_filename
+import socket
+import ssl
+from contextlib import contextmanager
+import logging
 
+# Initialize Flask app
 app = Flask(__name__)
 CORS(app)
 
 # Configuration
-app.config['JWT_SECRET_KEY'] = 'your-secret-key'  # Change this in production!
-app.config['JWT_ACCESS_TOKEN_EXPIRES'] = timedelta(hours=1)
+app.secret_key = 'your-secret-key'  # Change this in production!
 app.config['UPLOAD_FOLDER'] = 'uploads'
 jwt = JWTManager(app)
 
@@ -58,14 +60,34 @@ def home():
         'endpoints': {
             'register': '/api/register',
             'login': '/api/login',
+            'logout': '/api/logout',
             'files': '/api/files',
             'upload': '/api/files/upload',
             'download': '/api/files/download/<filename>',
             'share': '/api/files/share',
             'revoke': '/api/files/revoke',
-            'delete': '/api/files/delete/<filename>'
+            'delete': '/api/files/delete/<filename>',
+            'health': '/api/health'
         }
     })
+
+@app.route('/api/health')
+def health_check():
+    """Endpoint to verify secure connection to remote server"""
+    if verify_remote_server():
+        return jsonify({
+            'status': 'healthy',
+            'message': f"Secure connection to {app.config['REMOTE_SERVER']} verified",
+            'server': app.config['REMOTE_SERVER'],
+            'port': app.config['REMOTE_PORT']
+        }), 200
+    else:
+        return jsonify({
+            'status': 'unhealthy',
+            'message': f"Failed to establish secure connection to {app.config['REMOTE_SERVER']}",
+            'server': app.config['REMOTE_SERVER'],
+            'port': app.config['REMOTE_PORT']
+        }), 503
 
 @app.route('/api/register', methods=['POST'])
 def register():
@@ -102,13 +124,26 @@ def login():
     if not user or not bcrypt.checkpw(password.encode('utf-8'), user['password'].encode('utf-8')):
         return jsonify({'error': 'Invalid username or password'}), 401
 
-    access_token = create_access_token(identity=username)
-    return jsonify({'access_token': access_token}), 200
+    session['username'] = username
+    return jsonify({'message': 'Logged in successfully'}), 200
+
+@app.route('/api/logout', methods=['POST'])
+def logout():
+    session.pop('username', None)
+    return jsonify({'message': 'Logged out successfully'}), 200
+
+def login_required(f):
+    def decorated_function(*args, **kwargs):
+        if 'username' not in session:
+            return jsonify({'error': 'Authentication required'}), 401
+        return f(*args, **kwargs)
+    decorated_function.__name__ = f.__name__
+    return decorated_function
 
 @app.route('/api/files', methods=['GET'])
-@jwt_required()
+@login_required
 def get_files():
-    username = get_jwt_identity()
+    username = session['username']
     owned_files = [f for f, data in files.items() if data['owner'] == username]
     shared_files = [f for f, data in files.items() if username in data.get('shared_with', [])]
     
@@ -118,7 +153,7 @@ def get_files():
     }), 200
 
 @app.route('/api/files/upload', methods=['POST'])
-@jwt_required()
+@login_required
 def upload_file():
     if 'file' not in request.files:
         return jsonify({'error': 'No file provided'}), 400
@@ -127,7 +162,7 @@ def upload_file():
     if file.filename == '':
         return jsonify({'error': 'No file selected'}), 400
 
-    username = get_jwt_identity()
+    username = session['username']
     filename = secure_filename(file.filename)
     
     # Save file
@@ -143,9 +178,9 @@ def upload_file():
     return jsonify({'message': 'File uploaded successfully'}), 201
 
 @app.route('/api/files/download/<filename>', methods=['GET'])
-@jwt_required()
+@login_required
 def download_file(filename):
-    username = get_jwt_identity()
+    username = session['username']
     file_data = files.get(filename)
     
     if not file_data:
@@ -158,12 +193,12 @@ def download_file(filename):
     return send_file(file_path, as_attachment=True)
 
 @app.route('/api/files/share', methods=['POST'])
-@jwt_required()
+@login_required
 def share_file():
     data = request.get_json()
     filename = data.get('filename')
     target_user = data.get('username')
-    username = get_jwt_identity()
+    username = session['username']
     
     if not filename or not target_user:
         return jsonify({'error': 'Missing filename or target username'}), 400
@@ -183,12 +218,12 @@ def share_file():
     return jsonify({'message': 'File shared successfully'}), 200
 
 @app.route('/api/files/revoke', methods=['POST'])
-@jwt_required()
+@login_required
 def revoke_access():
     data = request.get_json()
     filename = data.get('filename')
     target_user = data.get('username')
-    username = get_jwt_identity()
+    username = session['username']
     
     if not filename or not target_user:
         return jsonify({'error': 'Missing filename or target username'}), 400
@@ -205,16 +240,16 @@ def revoke_access():
     return jsonify({'message': 'Access revoked successfully'}), 200
 
 @app.route('/api/files/delete/<filename>', methods=['DELETE'])
-@jwt_required()
+@login_required
 def delete_file(filename):
-    username = get_jwt_identity()
+    username = session['username']
     
     if filename not in files:
         return jsonify({'error': 'File not found'}), 404
         
     if files[filename]['owner'] != username:
         return jsonify({'error': 'You can only delete files you own'}), 403
-        
+    
     # Delete file from filesystem
     file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
     if os.path.exists(file_path):
