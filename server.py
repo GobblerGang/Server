@@ -1,4 +1,5 @@
-
+import socket
+import ssl
 import socket
 import ssl
 from flask import Flask, request, jsonify, send_file, session
@@ -19,6 +20,12 @@ CORS(app)
 # Configuration
 app.secret_key = 'your-secret-key'  # Change this in production!
 app.config['UPLOAD_FOLDER'] = 'uploads'
+jwt = JWTManager(app)
+
+# SSL Configuration
+ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+ssl_context.load_cert_chain(certfile="server.crt", keyfile="server.key")
+jwt = JWTManager(app)
 
 # SSL Configuration
 ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
@@ -256,4 +263,23 @@ def delete_file(filename):
     return jsonify({'message': 'File deleted successfully'}), 200
 
 if __name__ == '__main__':
+    print("\n=== Secure File Sharing Server ===")
+    print("Server is running with TLS and listening on all interfaces")
+    print("You can access it using:")
+    print("  - https://localhost:4433")
+    print("  - https://127.0.0.1:4433")
+    print("  - https://<your-ip-address>:4433")
+    print("\nAvailable endpoints:")
+    print("  - GET  /")
+    print("  - POST /api/register")
+    print("  - POST /api/login")
+    print("  - GET  /api/files")
+    print("  - POST /api/files/upload")
+    print("  - GET  /api/files/download/<filename>")
+    print("  - POST /api/files/share")
+    print("  - POST /api/files/revoke")
+    print("  - DELETE /api/files/delete/<filename>")
+    print("\nPress Ctrl+C to stop the server")
+    print("===========================\n")
+    app.run(host='0.0.0.0', port=4433, ssl_context=ssl_context, debug=True)
     app.run(debug=True)
