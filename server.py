@@ -1,10 +1,18 @@
+
+import socket
+import ssl
 from flask import Flask, request, jsonify, send_file, session
 from flask_cors import CORS
 import os
 import bcrypt
 import json
 from werkzeug.utils import secure_filename
+import socket
+import ssl
+from contextlib import contextmanager
+import logging
 
+# Initialize Flask app
 app = Flask(__name__)
 CORS(app)
 
@@ -53,9 +61,28 @@ def home():
             'download': '/api/files/download/<filename>',
             'share': '/api/files/share',
             'revoke': '/api/files/revoke',
-            'delete': '/api/files/delete/<filename>'
+            'delete': '/api/files/delete/<filename>',
+            'health': '/api/health'
         }
     })
+
+@app.route('/api/health')
+def health_check():
+    """Endpoint to verify secure connection to remote server"""
+    if verify_remote_server():
+        return jsonify({
+            'status': 'healthy',
+            'message': f"Secure connection to {app.config['REMOTE_SERVER']} verified",
+            'server': app.config['REMOTE_SERVER'],
+            'port': app.config['REMOTE_PORT']
+        }), 200
+    else:
+        return jsonify({
+            'status': 'unhealthy',
+            'message': f"Failed to establish secure connection to {app.config['REMOTE_SERVER']}",
+            'server': app.config['REMOTE_SERVER'],
+            'port': app.config['REMOTE_PORT']
+        }), 503
 
 @app.route('/api/register', methods=['POST'])
 def register():
