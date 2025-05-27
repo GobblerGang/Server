@@ -1,6 +1,6 @@
 from flask import Blueprint, request, jsonify, session
 import bcrypt
-from .data import users, save_users
+from .models import db, User
 
 auth_bp = Blueprint('auth', __name__)
 
@@ -17,20 +17,23 @@ def register():
     data = request.get_json()
     username = data.get('username')
     password = data.get('password')
+    email = data.get('email')
 
-    if not username or not password:
-        return jsonify({'error': 'Missing username or password'}), 400
+    if not username or not password or not email:
+        return jsonify({'error': 'Missing username, password, or email'}), 400
 
-    if username in users:
-        return jsonify({'error': 'Username already exists'}), 400
+    existing_user = User.query.filter((User.username == username) | (User.email == email)).first()
+    if existing_user:
+        if existing_user.username == username:
+            return jsonify({'error': 'Username already exists'}), 400
+        else:
+            return jsonify({'error': 'Email already exists'}), 400
 
-    # Hash password
     hashed = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt())
-    users[username] = {
-        'password': hashed.decode('utf-8'),
-        'files': []
-    }
-    save_users()
+
+    new_user = User(username=username, password=hashed.decode('utf-8'), email=email)
+    db.session.add(new_user)
+    db.session.commit()
 
     return jsonify({'message': 'User registered successfully'}), 201
 
@@ -43,11 +46,12 @@ def login():
     if not username or not password:
         return jsonify({'error': 'Missing username or password'}), 400
 
-    user = users.get(username)
-    if not user or not bcrypt.checkpw(password.encode('utf-8'), user['password'].encode('utf-8')):
+    user = User.query.filter_by(username=username).first()
+
+    if not user or not bcrypt.checkpw(password.encode('utf-8'), user.password.encode('utf-8')):
         return jsonify({'error': 'Invalid username or password'}), 401
 
-    session['username'] = username
+    session['username'] = user.username
     return jsonify({'message': 'Logged in successfully'}), 200
 
 @auth_bp.route('/logout', methods=['POST'])
