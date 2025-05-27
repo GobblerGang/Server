@@ -16,12 +16,15 @@ db = SQLAlchemy()
 # In production, use a database or distributed cache
 used_nonces = {}
 
-def create_app():
+def create_app(config_name='default'):
     app = Flask(__name__)
     CORS(app)
 
     # Configuration from environment variables
     app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY') or 'a-very-hard-to-guess-string'
+    
+    # Set debug mode based on config
+    app.config['DEBUG'] = config_name == 'development'
     
     # Database configuration using individual environment variables
     db_user = os.getenv("DB_USER")
