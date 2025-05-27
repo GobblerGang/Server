@@ -7,6 +7,7 @@ from dotenv import load_dotenv
 import logging
 import uuid
 import time # Import time for nonce timestamping
+from urllib.parse import quote_plus # Import quote_plus for URL encoding
 
 load_dotenv()
 
@@ -37,7 +38,9 @@ def create_app(config_name='default'):
         # Raise a descriptive error if database environment variables are not set
         raise ValueError("Database environment variables (DB_USER, DB_PASSWORD, DB_HOST, DB_NAME) must be set.")
 
-    app.config['SQLALCHEMY_DATABASE_URI'] = f'mysql+mysqlconnector://{db_user}:{db_pass}@{db_host}:{db_port}/{db_name}'
+    # URL-encode the password before including it in the URI
+    encoded_db_pass = quote_plus(db_pass)
+    app.config['SQLALCHEMY_DATABASE_URI'] = f'mysql+mysqlconnector://{db_user}:{encoded_db_pass}@{db_host}:{db_port}/{db_name}'
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
     app.config['UPLOAD_FOLDER'] = os.environ.get('UPLOAD_FOLDER') or 'uploads'
 
