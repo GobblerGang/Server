@@ -1,13 +1,45 @@
-from flask import Flask, jsonify
+from flask import Flask, jsonify, request
 from flask_cors import CORS
 import os
 import ssl
+from flask_sqlalchemy import SQLAlchemy
+from dotenv import load_dotenv
+import logging
+
+load_dotenv()
+
+db = SQLAlchemy()
 
 def create_app():
     app = Flask(__name__)
     CORS(app)
-    app.secret_key = 'your-secret-key' # Change this in production!
-    app.config['UPLOAD_FOLDER'] = 'uploads'
+
+    # Configuration from environment variables
+    app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY') or 'a-very-hard-to-guess-string'
+    
+    # Database configuration using individual environment variables
+    db_user = os.getenv("DB_USER")
+    db_pass = os.getenv("DB_PASSWORD")
+    db_host = os.getenv("DB_HOST")
+    db_port = os.getenv("DB_PORT", "3306") # Default to 3306 if not set
+    db_name = os.getenv("DB_NAME")
+
+    if not all([db_user, db_pass, db_host, db_name]):
+        # Raise a descriptive error if database environment variables are not set
+        raise ValueError("Database environment variables (DB_USER, DB_PASSWORD, DB_HOST, DB_NAME) must be set.")
+
+    app.config['SQLALCHEMY_DATABASE_URI'] = f'mysql+mysqlconnector://{db_user}:{db_pass}@{db_host}:{db_port}/{db_name}'
+    app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+    app.config['UPLOAD_FOLDER'] = os.environ.get('UPLOAD_FOLDER') or 'uploads'
+
+    db.init_app(app)
+
+    # Configure logging
+    logging.basicConfig(level=logging.INFO) # Set desired logging level
+    app.logger.setLevel(logging.INFO)
+    # Optionally add a handler if default isn't sufficient (e.g., for specific formatting)
+    # handler = logging.StreamHandler()
+    # app.logger.addHandler(handler)
 
     # Ensure upload directory exists
     os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
@@ -16,11 +48,14 @@ def create_app():
     # In production, a reverse proxy handles SSL
     try:
         ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
-        ssl_context.load_cert_chain(certfile="server.crt", keyfile="server.key")
+        ssl_context.load_cert_chain(certfile=os.environ.get('SSL_CERT_PATH') or "server.crt", keyfile=os.environ.get('SSL_KEY_PATH') or "server.key")
         app.config['SSL_CONTEXT'] = ssl_context
     except FileNotFoundError:
-        print("Warning: SSL certificate files not found. Running without SSL context.")
+        app.logger.warning("SSL certificate files not found. Running without SSL context.")
         app.config['SSL_CONTEXT'] = None
+
+    # Import models so that they are known to SQLAlchemy and Alembic
+    from . import models
 
     # Import and register blueprints
     from .auth import auth_bp
@@ -31,6 +66,7 @@ def create_app():
     # Add a simple root route
     @app.route('/')
     def home():
+        app.logger.info("Root endpoint accessed") # Example log message
         return jsonify({
             'status': 'running',
             'message': 'File Sharing Server is running',
@@ -46,5 +82,11 @@ def create_app():
                 'delete': '/api/files/delete/<filename>'
             }
         })
+
+    # Add a request logger
+    @app.before_request
+    def log_request_info():
+        client_ip = request.remote_addr
+        app.logger.info(f"Request from IP: {client_ip} - {request.method} {request.path}")
 
     return app 

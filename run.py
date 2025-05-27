@@ -13,7 +13,7 @@ if __name__ == '__main__':
          print("You can access it using:")
          print("  - https://localhost:4433")
          print("  - https://127.0.0.0.1:4433")
-         print("  - https://<your-ip-address>:4433") # Replace with your server's actual IP
+         print("  - https://193.1.98.135:4433") # Replace with your server's actual IP
          print("\nPress Ctrl+C to stop the server")
          print("===========================\n")
          app.run(host='0.0.0.0', port=4433, ssl_context=ssl_context, debug=True)
