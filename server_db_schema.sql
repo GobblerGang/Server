@@ -20,6 +20,16 @@ CREATE TABLE files (
 	FOREIGN KEY(owner_id) REFERENCES user (id)
 );
 
+CREATE TABLE nonces (
+	id INTEGER NOT NULL AUTO_INCREMENT, 
+	username VARCHAR(80) NOT NULL, 
+	nonce VARCHAR(64) NOT NULL, 
+	timestamp DATETIME NOT NULL, 
+	used BOOL, 
+	PRIMARY KEY (id), 
+	FOREIGN KEY(username) REFERENCES user (username)
+);
+
 CREATE TABLE user_keys (
 	user_id INTEGER NOT NULL, 
 	identity_key BLOB NOT NULL, 

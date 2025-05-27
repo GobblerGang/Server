@@ -63,3 +63,20 @@ class PAC(db.Model):
 
     def __repr__(self):
         return f'<PAC {self.id} for File {self.file_id} to User {self.recipient_id}>' 
+
+class Nonce(db.Model):
+    __tablename__ = 'nonces'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    username = db.Column(db.String(80), db.ForeignKey('user.username'), nullable=False)
+    nonce = db.Column(db.String(64), nullable=False)
+    timestamp = db.Column(db.DateTime, nullable=False)
+    used = db.Column(db.Boolean, default=False)
+    
+    # Add index for faster lookups
+    __table_args__ = (
+        db.Index('idx_nonce_lookup', 'username', 'nonce'),
+    )
+    
+    def __repr__(self):
+        return f'<Nonce {self.nonce} for {self.username}>' 

@@ -5,10 +5,16 @@ import ssl
 from flask_sqlalchemy import SQLAlchemy
 from dotenv import load_dotenv
 import logging
+import uuid
+import time # Import time for nonce timestamping
 
 load_dotenv()
 
 db = SQLAlchemy()
+
+# In-memory storage for used nonces (for development only)
+# In production, use a database or distributed cache
+used_nonces = {}
 
 def create_app():
     app = Flask(__name__)
@@ -58,7 +64,7 @@ def create_app():
     from . import models
 
     # Import and register blueprints
-    from .auth import auth_bp
+    from .auth import auth_bp, verify_signature_authorization # Import verify_signature_authorization
     from .files import files_bp
     app.register_blueprint(auth_bp, url_prefix='/api')
     app.register_blueprint(files_bp, url_prefix='/api/files')
@@ -79,11 +85,33 @@ def create_app():
                 'download': '/api/files/download/<filename>',
                 'share': '/api/files/share',
                 'revoke': '/api/files/revoke',
-                'delete': '/api/files/delete/<filename>'
+                'delete': '/api/files/delete/<filename>',
+                'nonce': '/api/nonce' # Add nonce endpoint
             }
         })
 
-    # Add a request logger
+    @app.route('/api/nonce', methods=['POST'])
+    def get_nonce():
+        data = request.get_json()
+        username = data.get('username')
+        if not username:
+            return jsonify({'error': 'Username required'}), 400
+
+        user = models.User.query.filter_by(username=username).first()
+        if not user:
+            return jsonify({'error': 'User not found'}), 404
+
+        nonce = str(uuid.uuid4())
+        timestamp = int(time.time())
+
+        if username not in used_nonces:
+            used_nonces[username] = {}
+        used_nonces[username][nonce] = timestamp
+
+        app.logger.info(f"Issued nonce {nonce} for user {username}")
+
+        return jsonify({'nonce': nonce}), 200
+
     @app.before_request
     def log_request_info():
         client_ip = request.remote_addr
