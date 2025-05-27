@@ -45,6 +45,11 @@ def load_users():
 # Load existing users
 load_users()
 
+@app.before_request
+def log_request_info():
+    client_ip = request.remote_addr
+    print(f"Request from IP: {client_ip} - {request.method} {request.path}")
+
 @app.route('/')
 def home():
     return jsonify({
