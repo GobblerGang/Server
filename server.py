@@ -9,7 +9,7 @@ app = Flask(__name__)
 CORS(app)
 
 # Configuration
-app.secret_key = 'your-secret-key'  # Change this in production!
+app.config['SECRET_KEY'] = 'your-secret-key'  # Change this in production!
 app.config['UPLOAD_FOLDER'] = 'uploads'
 
 # Ensure upload directory exists
@@ -34,6 +34,14 @@ def load_users():
 
 # Load existing users
 load_users()
+
+def login_required(f):
+    def decorated_function(*args, **kwargs):
+        if 'username' not in session:
+            return jsonify({'error': 'Authentication required'}), 401
+        return f(*args, **kwargs)
+    decorated_function.__name__ = f.__name__
+    return decorated_function
 
 @app.route('/')
 def home():
@@ -95,14 +103,6 @@ def login():
 def logout():
     session.pop('username', None)
     return jsonify({'message': 'Logged out successfully'}), 200
-
-def login_required(f):
-    def decorated_function(*args, **kwargs):
-        if 'username' not in session:
-            return jsonify({'error': 'Authentication required'}), 401
-        return f(*args, **kwargs)
-    decorated_function.__name__ = f.__name__
-    return decorated_function
 
 @app.route('/api/files', methods=['GET'])
 @login_required

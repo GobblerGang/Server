@@ -1,1 +1,5 @@
 users.json
+server.key
+server.crt
+ca.crt
+
