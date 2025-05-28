@@ -36,6 +36,7 @@ var/
 # Virtual Environment
 venv/
 ENV/
+.venv/
 
 # IDE
 .idea/
