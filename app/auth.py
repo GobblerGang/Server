@@ -1,5 +1,4 @@
 from flask import Blueprint, request, jsonify, session, g, current_app
-import bcrypt
 from .models import db, User, UserKeys, Nonce
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import padding
@@ -9,11 +8,10 @@ import json
 import time
 from datetime import datetime, timedelta, timezone
 import secrets
+import os
 
-# Configure nonce lifespan (in seconds)
-NONCE_LIFESPAN = 300
-# Configure timestamp freshness tolerance (in seconds)
-TIMESTAMP_TOLERANCE = 10 # Allow for up to 10 seconds of clock skew
+NONCE_LIFESPAN = int(os.getenv('NONCE_LIFESPAN', 300)) 
+TIMESTAMP_TOLERANCE = int(os.getenv('TIMESTAMP_TOLERANCE', 10)) 
 
 auth_bp = Blueprint('auth', __name__)
 
@@ -25,22 +23,25 @@ def cleanup_old_nonces():
 
 def verify_request_auth():
     """Verify the authentication of a request by checking nonce and signature.
+    Reads authentication data from headers.
     Returns (success, user, error_message, status_code) tuple."""
-    data = request.get_json()
-    if not data:
-        return False, None, 'Authentication required: Request body missing', 401
-
-    username = data.get('username')
-    original_message_str = data.get('original_message')
-    signature_hex = data.get('signature')
+    username = request.headers.get('Username')
+    original_message_str = request.headers.get('Original-Message')
+    signature_hex = request.headers.get('Signature')
 
     if not username or not original_message_str or not signature_hex:
-        return False, None, 'Authentication required: Missing signature data in request', 401
+         data = request.get_json()
+         if data:
+            username = data.get('username')
+            original_message_str = data.get('original_message')
+            signature_hex = data.get('signature')
+
+    if not username or not original_message_str or not signature_hex:
+        return False, None, 'Authentication required: Missing signature data in headers or body', 401
 
     try:
         original_message = json.loads(original_message_str)
         nonce = original_message.get('nonce')
-        # Ensure timestamp is treated as UTC if not specified, for consistent comparison
         timestamp_str = original_message.get('timestamp')
         if timestamp_str is None:
              return False, None, 'Authentication failed: Timestamp missing in original message', 401
@@ -61,10 +62,6 @@ def verify_request_auth():
     if not nonce:
         return False, None, 'Authentication failed: Nonce missing in original message', 401
 
-    # Clean up old nonces periodically
-    cleanup_old_nonces()
-
-    # Nonce validation (check if exists and is unused)
     db_nonce = Nonce.query.filter_by(username=username, nonce=nonce, used=False).first()
     if not db_nonce:
         return False, None, 'Authentication failed: Invalid or expired nonce', 401
@@ -72,6 +69,14 @@ def verify_request_auth():
     # Check if nonce timestamp is within the acceptable freshness window AND overall lifespan
     current_time_utc = datetime.now(timezone.utc)
     time_difference = abs((current_time_utc - nonce_timestamp).total_seconds())
+
+    # Check if the client's provided timestamp is too far in the future (potential attack)
+    if (nonce_timestamp - current_time_utc).total_seconds() > TIMESTAMP_TOLERANCE:
+         # Mark nonce as used if it's in the future beyond tolerance
+         db_nonce.used = True
+         db.session.commit()
+         return False, None, 'Authentication failed: Nonce timestamp is in the future', 401
+
 
     if time_difference > TIMESTAMP_TOLERANCE or (current_time_utc - db_nonce.timestamp).total_seconds() > NONCE_LIFESPAN + TIMESTAMP_TOLERANCE:
         # Mark nonce as used if it's outside the freshness window or overall lifespan
@@ -95,8 +100,7 @@ def verify_request_auth():
         db.session.commit()
         return False, None, 'Authentication failed: Invalid signature', 401
 
-    # If both nonce and signature are valid:
-    # Mark nonce as used
+
     db_nonce.used = True
     db.session.commit()
 
@@ -217,15 +221,13 @@ def get_nonce():
     if not username:
         return jsonify({'error': 'Username required'}), 400
 
-    # Verify user exists
     user = User.query.filter_by(username=username).first()
     if not user:
         return jsonify({'error': 'User not found'}), 404
 
-    # Generate a random nonce
-    nonce = secrets.token_hex(32)  # 64 character hex string
+    nonce = secrets.token_hex(32) 
     
-    # Store in database
+
     new_nonce = Nonce(
         username=username,
         nonce=nonce,
