@@ -8,14 +8,18 @@ import logging
 import uuid
 import time # Import time for nonce timestamping
 from urllib.parse import quote_plus # Import quote_plus for URL encoding
+from flask_apscheduler import APScheduler # Import APScheduler
 
 load_dotenv()
 
 db = SQLAlchemy()
+scheduler = APScheduler() # Initialize scheduler
 
 # In-memory storage for used nonces (for development only)
 # In production, use a database or distributed cache
-used_nonces = {}
+# Removed in-memory nonce storage
+
+from .auth import cleanup_old_nonces # Import the cleanup function
 
 def create_app(config_name='default'):
     app = Flask(__name__)
@@ -96,31 +100,15 @@ def create_app(config_name='default'):
             }
         })
 
-    @app.route('/api/nonce', methods=['POST'])
-    def get_nonce():
-        data = request.get_json()
-        username = data.get('username')
-        if not username:
-            return jsonify({'error': 'Username required'}), 400
-
-        user = models.User.query.filter_by(username=username).first()
-        if not user:
-            return jsonify({'error': 'User not found'}), 404
-
-        nonce = str(uuid.uuid4())
-        timestamp = int(time.time())
-
-        if username not in used_nonces:
-            used_nonces[username] = {}
-        used_nonces[username][nonce] = timestamp
-
-        app.logger.info(f"Issued nonce {nonce} for user {username}")
-
-        return jsonify({'nonce': nonce}), 200
-
     @app.before_request
     def log_request_info():
         client_ip = request.remote_addr
         app.logger.info(f"Request from IP: {client_ip} - {request.method} {request.path}")
+
+    # Initialize and start the scheduler
+    scheduler.init_app(app)
+    scheduler.start()
+
+    scheduler.add_job(id='cleanup_nonces', func=cleanup_old_nonces, trigger='interval', hours=1)
 
     return app 
