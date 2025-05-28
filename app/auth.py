@@ -7,11 +7,13 @@ from cryptography.hazmat.primitives.hashes import SHA256
 from cryptography.exceptions import InvalidSignature
 import json
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import secrets
 
 # Configure nonce lifespan (in seconds)
 NONCE_LIFESPAN = 300
+# Configure timestamp freshness tolerance (in seconds)
+TIMESTAMP_TOLERANCE = 10 # Allow for up to 10 seconds of clock skew
 
 auth_bp = Blueprint('auth', __name__)
 
@@ -38,31 +40,52 @@ def verify_request_auth():
     try:
         original_message = json.loads(original_message_str)
         nonce = original_message.get('nonce')
-        timestamp = original_message.get('timestamp')
+        # Ensure timestamp is treated as UTC if not specified, for consistent comparison
+        timestamp_str = original_message.get('timestamp')
+        if timestamp_str is None:
+             return False, None, 'Authentication failed: Timestamp missing in original message', 401
+        # Attempt to parse with fromisoformat, assuming ISO 8601 format from client
+        # Handle potential ValueError if format is incorrect
+        try:
+            nonce_timestamp = datetime.fromisoformat(timestamp_str)
+            # If timestamp is naive, assume UTC as per common practice for API timestamps
+            if nonce_timestamp.tzinfo is None:
+                 nonce_timestamp = nonce_timestamp.replace(tzinfo=timezone.utc)
+
+        except ValueError:
+             return False, None, 'Authentication failed: Invalid timestamp format in original message', 401
+
     except (json.JSONDecodeError, AttributeError):
         return False, None, 'Authentication failed: Invalid original message format', 401
 
-    if not nonce or timestamp is None:
-        return False, None, 'Authentication failed: Nonce or timestamp missing in original message', 401
+    if not nonce:
+        return False, None, 'Authentication failed: Nonce missing in original message', 401
 
     # Clean up old nonces periodically
     cleanup_old_nonces()
 
-    # Nonce validation
+    # Nonce validation (check if exists and is unused)
     db_nonce = Nonce.query.filter_by(username=username, nonce=nonce, used=False).first()
     if not db_nonce:
         return False, None, 'Authentication failed: Invalid or expired nonce', 401
 
-    # Check if nonce is too old
-    if (datetime.utcnow() - db_nonce.timestamp).total_seconds() > NONCE_LIFESPAN:
-        db.session.delete(db_nonce)
+    # Check if nonce timestamp is within the acceptable freshness window AND overall lifespan
+    current_time_utc = datetime.now(timezone.utc)
+    time_difference = abs((current_time_utc - nonce_timestamp).total_seconds())
+
+    if time_difference > TIMESTAMP_TOLERANCE or (current_time_utc - db_nonce.timestamp).total_seconds() > NONCE_LIFESPAN + TIMESTAMP_TOLERANCE:
+        # Mark nonce as used if it's outside the freshness window or overall lifespan
+        db_nonce.used = True
         db.session.commit()
-        return False, None, 'Authentication failed: Nonce expired', 401
+        return False, None, 'Authentication failed: Nonce expired or outside freshness window', 401
 
     # Nonce is valid and fresh, now verify signature
     try:
         signature = bytes.fromhex(signature_hex)
     except ValueError:
+        # Mark nonce as used and reject if signature format is invalid
+        db_nonce.used = True
+        db.session.commit()
         return False, None, 'Authentication failed: Invalid signature format', 401
 
     # Verify the signature using the extracted original message bytes
@@ -127,14 +150,13 @@ def verify_signature_authorization(username, original_message, signature):
 def register():
     data = request.get_json()
     username = data.get('username')
-    password = data.get('password')
     email = data.get('email')
     identity_key = data.get('identity_key')
     signed_prekey = data.get('signed_prekey')
     opks = data.get('opks')
 
-    if not username or not password or not email or not identity_key or not signed_prekey:
-        return jsonify({'error': 'Missing required fields (username, password, email, identity_key, signed_prekey)'}), 400
+    if not username or not email or not identity_key or not signed_prekey:
+        return jsonify({'error': 'Missing required fields (username, email, identity_key, signed_prekey)'}), 400
 
     existing_user = User.query.filter((User.username == username) | (User.email == email)).first()
     if existing_user:
@@ -143,9 +165,8 @@ def register():
         else:
             return jsonify({'error': 'Email already exists'}), 400
 
-    hashed = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt())
-
-    new_user = User(username=username, password=hashed.decode('utf-8'), email=email)
+    # Password is not stored, authentication is key-based
+    new_user = User(username=username, email=email)
     db.session.add(new_user)
     db.session.commit()
 
@@ -172,7 +193,6 @@ def register():
 @auth_bp.route('/login', methods=['POST'])
 def login():
     # Authenticate user using signature verification and nonce validation
-    # If successful, set a session cookie for browser-based authentication
     success, user, error_message, status_code = verify_request_auth()
     if not success:
         return jsonify({'error': error_message}), status_code
