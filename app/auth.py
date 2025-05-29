@@ -17,7 +17,7 @@ auth_bp = Blueprint('auth', __name__)
 
 def cleanup_old_nonces():
     """Remove nonces older than NONCE_LIFESPAN seconds"""
-    cutoff_time = datetime.utcnow() - timedelta(seconds=NONCE_LIFESPAN)
+    cutoff_time = datetime.now() - timedelta(seconds=NONCE_LIFESPAN)
     Nonce.query.filter(Nonce.timestamp < cutoff_time).delete()
     db.session.commit()
 
@@ -25,9 +25,16 @@ def verify_request_auth():
     """Verify the authentication of a request by checking nonce and signature.
     Reads authentication data from headers.
     Returns (success, user, error_message, status_code) tuple."""
-    username = request.headers.get('Username')
-    original_message_str = request.headers.get('Original-Message')
-    signature_hex = request.headers.get('Signature')
+    
+    # TODO these headers should be:
+    # X-User-ID (not username), 
+    # X-Nonce - the verification nonce should be passed in the headers,
+    # X-Signature
+    # (payload shouldnt be in header either, this is in the body) 
+    # change this method to reflect this
+    username = request.headers.get('X-Username')
+    original_message_str = request.headers.get('X-Payload')
+    signature_hex = request.headers.get('X-Signature')
 
     if not username or not original_message_str or not signature_hex:
          data = request.get_json()
@@ -152,11 +159,21 @@ def verify_signature_authorization(username, original_message, signature):
 
 @auth_bp.route('/register', methods=['POST'])
 def register():
+    """Expected JSON input body structure:
+    {
+        "username": str,
+        "email": str,
+        "identity_key_public": str,
+        "signed_prekey_public": str,
+        "signed_prekey_signature": str,
+        "opks": dict (may not use these)
+    }
+    """
     data = request.get_json()
     username = data.get('username')
     email = data.get('email')
-    identity_key = data.get('identity_key')
-    signed_prekey = data.get('signed_prekey')
+    identity_key = data.get('identity_key_public')
+    signed_prekey = data.get('signed_prekey_public')
     opks = data.get('opks')
 
     if not username or not email or not identity_key or not signed_prekey:
@@ -202,11 +219,13 @@ def login():
         return jsonify({'error': error_message}), status_code
 
     # Set session for browser-based authentication
-    session['username'] = user.username
+    session['username'] = user.username # NOTE dont think we should be using session as this is a rest API
+    # Dont even think we need a login endpoint, as the client should be able to authenticate with the signature and nonce
     return jsonify({'message': 'Authentication successful'}), 200
 
 @auth_bp.route('/logout', methods=['POST'])
 def logout():
+    # see login() comments
     session.pop('username', None)
     return jsonify({'message': 'Logged out successfully'}), 200
 
@@ -217,6 +236,7 @@ def get_nonce():
     if not data:
         return jsonify({'error': 'Request body missing'}), 400
 
+    # this should be a user id not username
     username = data.get('username')
     if not username:
         return jsonify({'error': 'Username required'}), 400
@@ -227,7 +247,7 @@ def get_nonce():
 
     nonce = secrets.token_hex(32) 
     
-
+    # see changes to nonce model
     new_nonce = Nonce(
         username=username,
         nonce=nonce,
