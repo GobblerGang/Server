@@ -26,64 +26,27 @@ def verify_request_auth():
     Reads authentication data from headers.
     Returns (success, user, error_message, status_code) tuple."""
     
-    # TODO these headers should be:
-    # X-User-ID (not username), 
-    # X-Nonce - the verification nonce should be passed in the headers,
-    # X-Signature
-    # (payload shouldnt be in header either, this is in the body) 
-    # change this method to reflect this
-    username = request.headers.get('X-Username')
-    original_message_str = request.headers.get('X-Payload')
+    # Get authentication data from headers
+    user_id = request.headers.get('X-User-ID')
+    nonce = request.headers.get('X-Nonce')
     signature_hex = request.headers.get('X-Signature')
 
-    if not username or not original_message_str or not signature_hex:
-         data = request.get_json()
-         if data:
-            username = data.get('username')
-            original_message_str = data.get('original_message')
-            signature_hex = data.get('signature')
+    if not user_id or not nonce or not signature_hex:
+        return False, None, 'Authentication required: Missing X-User-ID, X-Nonce, or X-Signature headers', 401
 
-    if not username or not original_message_str or not signature_hex:
-        return False, None, 'Authentication required: Missing signature data in headers or body', 401
+    # Get the request payload for signature verification
+    payload = request.get_data()
+    if not payload:
+        return False, None, 'Authentication failed: Request payload is required for signature verification', 401
 
-    try:
-        original_message = json.loads(original_message_str)
-        nonce = original_message.get('nonce')
-        timestamp_str = original_message.get('timestamp')
-        if timestamp_str is None:
-             return False, None, 'Authentication failed: Timestamp missing in original message', 401
-        # Attempt to parse with fromisoformat, assuming ISO 8601 format from client
-        # Handle potential ValueError if format is incorrect
-        try:
-            nonce_timestamp = datetime.fromisoformat(timestamp_str)
-            # If timestamp is naive, assume UTC as per common practice for API timestamps
-            if nonce_timestamp.tzinfo is None:
-                 nonce_timestamp = nonce_timestamp.replace(tzinfo=timezone.utc)
-
-        except ValueError:
-             return False, None, 'Authentication failed: Invalid timestamp format in original message', 401
-
-    except (json.JSONDecodeError, AttributeError):
-        return False, None, 'Authentication failed: Invalid original message format', 401
-
-    if not nonce:
-        return False, None, 'Authentication failed: Nonce missing in original message', 401
-
-    db_nonce = Nonce.query.filter_by(username=username, nonce=nonce, used=False).first()
+    # Verify the nonce
+    db_nonce = Nonce.query.filter_by(username=user_id, nonce=nonce, used=False).first()
     if not db_nonce:
         return False, None, 'Authentication failed: Invalid or expired nonce', 401
 
-    # Check if nonce timestamp is within the acceptable freshness window AND overall lifespan
+    # Check if nonce is within the acceptable freshness window
     current_time_utc = datetime.now(timezone.utc)
-    time_difference = abs((current_time_utc - nonce_timestamp).total_seconds())
-
-    # Check if the client's provided timestamp is too far in the future (potential attack)
-    if (nonce_timestamp - current_time_utc).total_seconds() > TIMESTAMP_TOLERANCE:
-         # Mark nonce as used if it's in the future beyond tolerance
-         db_nonce.used = True
-         db.session.commit()
-         return False, None, 'Authentication failed: Nonce timestamp is in the future', 401
-
+    time_difference = abs((current_time_utc - db_nonce.timestamp).total_seconds())
 
     if time_difference > TIMESTAMP_TOLERANCE or (current_time_utc - db_nonce.timestamp).total_seconds() > NONCE_LIFESPAN + TIMESTAMP_TOLERANCE:
         # Mark nonce as used if it's outside the freshness window or overall lifespan
@@ -91,7 +54,7 @@ def verify_request_auth():
         db.session.commit()
         return False, None, 'Authentication failed: Nonce expired or outside freshness window', 401
 
-    # Nonce is valid and fresh, now verify signature
+    # Verify the signature
     try:
         signature = bytes.fromhex(signature_hex)
     except ValueError:
@@ -100,21 +63,21 @@ def verify_request_auth():
         db.session.commit()
         return False, None, 'Authentication failed: Invalid signature format', 401
 
-    # Verify the signature using the extracted original message bytes
-    if not verify_signature_authorization(username, original_message_str, signature):
+    # Verify the signature using the request payload
+    if not verify_signature_authorization(user_id, payload, signature):
         # Mark nonce as used and reject
         db_nonce.used = True
         db.session.commit()
         return False, None, 'Authentication failed: Invalid signature', 401
 
-
+    # Mark nonce as used
     db_nonce.used = True
     db.session.commit()
 
     # Fetch the user
-    user = User.query.filter_by(username=username).first()
+    user = User.query.filter_by(username=user_id).first()
     if not user:
-        current_app.logger.error(f"Anomaly: Signature valid for user {username} but user not found in DB.")
+        current_app.logger.error(f"Anomaly: Signature valid for user {user_id} but user not found in DB.")
         return False, None, 'Authentication failed: User data inconsistency', 500
 
     return True, user, None, None
@@ -130,20 +93,28 @@ def login_required(f):
     decorated_function.__name__ = f.__name__
     return decorated_function
 
-def verify_signature_authorization(username, original_message, signature):
+def verify_signature_authorization(username, payload, signature):
+    """Verify the signature of a request payload.
+    Args:
+        username: The username of the user
+        payload: The raw request payload (bytes)
+        signature: The signature to verify (bytes)
+    Returns:
+        bool: True if signature is valid, False otherwise
+    """
     user = User.query.filter_by(username=username).first()
-    if not user or not user.keys or not user.keys.identity_key:
+    if not user or not user.keys or not user.keys.identity_key_public:
         return False
 
     try:
         public_key = serialization.load_public_key(
-            user.keys.identity_key,
+            user.keys.identity_key_public,
             backend=None
         )
         
         public_key.verify(
             signature,
-            original_message.encode('utf-8'),
+            payload,
             padding.PSS(
                 mgf=padding.MGF1(SHA256()),
                 salt_length=padding.PSS.MAX_LENGTH
@@ -154,7 +125,7 @@ def verify_signature_authorization(username, original_message, signature):
     except InvalidSignature:
         return False
     except Exception as e:
-        print(f"Error during signature verification in verify_signature_authorization: {e}")
+        current_app.logger.error(f"Error during signature verification: {e}")
         return False
 
 @auth_bp.route('/register', methods=['POST'])
@@ -237,26 +208,23 @@ def get_nonce():
         return jsonify({'error': 'Request body missing'}), 400
 
     # this should be a user id not username
-    username = data.get('username')
-    if not username:
-        return jsonify({'error': 'Username required'}), 400
+    user_id = data.get('user_id')
+    if not user_id:
+        return jsonify({'error': 'User ID required'}), 400
 
-    user = User.query.filter_by(username=username).first()
+    user = User.query.filter_by(user_id=user_id).first()
     if not user:
         return jsonify({'error': 'User not found'}), 404
 
     nonce = secrets.token_hex(32) 
     
-    # see changes to nonce model
     new_nonce = Nonce(
-        username=username,
+        user_id=user_id,
         nonce=nonce,
-        timestamp=datetime.utcnow()
     )
     db.session.add(new_nonce)
     db.session.commit()
     
     return jsonify({
         'nonce': nonce,
-        'timestamp': new_nonce.timestamp.isoformat()
     }), 200 
