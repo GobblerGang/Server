@@ -76,8 +76,10 @@ def create_app(config_name='default'):
     # Import and register blueprints
     from .auth import auth_bp, verify_signature_authorization # Import verify_signature_authorization
     from .files import files_bp
+    from .users import users_bp
     app.register_blueprint(auth_bp, url_prefix='/api')
     app.register_blueprint(files_bp, url_prefix='/api/files')
+    app.register_blueprint(users_bp, url_prefix='/api/users')
 
     # Add a simple root route
     @app.route('/')
