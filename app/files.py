@@ -8,6 +8,9 @@ import base64
 
 files_bp = Blueprint('files', __name__)
 
+# Constants
+ENCRYPTED_FILES_DIR = 'encrypted_file_blobs'
+
 @files_bp.route('/', methods=['GET'])
 @login_required
 def get_files():
@@ -38,7 +41,7 @@ def save_encrypted_file(encrypted_blob: bytes, file_uuid: str) -> bool:
         OSError: If there's an error creating directories or writing the file
     """
     # Ensure the encrypted_file_blobs directory exists
-    encrypted_files_dir = os.path.join(current_app.config['UPLOAD_FOLDER'], 'encrypted_file_blobs')
+    encrypted_files_dir = os.path.join(current_app.config['UPLOAD_FOLDER'], ENCRYPTED_FILES_DIR)
     os.makedirs(encrypted_files_dir, exist_ok=True)
 
     # Save the encrypted file to disk using the UUID as filename
@@ -219,69 +222,68 @@ def share_file():
         'message': 'File shared successfully',
     }), 201
 
-@files_bp.route('/revoke', methods=['POST'])
+@files_bp.route('/revoke/<pac_id>', methods=['POST'])
 @login_required
-def revoke_access():
-    issuer_user = g.user
-    data = request.get_json()
+def revoke_access(pac_id):
+    current_user_uuid = g.user
 
-    filename = data.get('filename')
-    recipient_username = data.get('username')
-
-    if not filename or not recipient_username:
-        return jsonify({'error': 'Missing filename or recipient username'}), 400
-
-    file_to_revoke = File.query.filter_by(filename=filename).first()
-    if not file_to_revoke:
-        return jsonify({'error': 'File not found'}), 404
-
-    if file_to_revoke.owner != issuer_user:
-        return jsonify({'error': 'You can only revoke access to files you own'}), 403
-
-    recipient_user = User.query.filter_by(username=recipient_username).first()
-    if not recipient_user:
-        return jsonify({'error': 'Recipient user not found'}), 404
-
-    pac_to_revoke = PAC.query.filter_by(
-        file=file_to_revoke,
-        recipient=recipient_user,
-        issuer=issuer_user,
-        revoked=False
-    ).first()
-
-    if not pac_to_revoke:
-        return jsonify({'message': 'No active share found for this user'}), 404
-
-    pac_to_revoke.revoked = True
-    db.session.commit()
+    # Find the PAC and verify the issuer is the current user
+    pac_to_revoke = PAC.query.filter_by(id=pac_id, issuer=current_user_uuid).first()
     
-    return jsonify({'message': 'Access revoked successfully'}), 200
+    if not pac_to_revoke:
+        return jsonify({'error': 'PAC not found or you are not the issuer'}), 404
 
-@files_bp.route('/delete/<filename>', methods=['DELETE'])
+    if pac_to_revoke.revoked:
+        return jsonify({'error': 'PAC is already revoked'}), 400
+
+    try:
+        pac_to_revoke.revoked = True
+        db.session.commit()
+        return jsonify({'message': 'Access revoked successfully'}), 200
+    except Exception as e:
+        db.session.rollback()
+        current_app.logger.error(f"Error revoking PAC: {e}")
+        return jsonify({'error': 'Failed to revoke access'}), 500
+
+@files_bp.route('/delete/<file_uuid>', methods=['DELETE'])
 @login_required
-def delete_file(filename):
-    current_user = g.user
+def delete_file(file_uuid):
+    current_user_uuid = g.user
 
-    file_to_delete = File.query.filter_by(filename=filename, owner=current_user).first()
+    # Find file by UUID and verify ownership using user UUID
+    file_to_delete = File.query.filter_by(uuid=file_uuid, owner=current_user_uuid).first()
     
     if not file_to_delete:
         return jsonify({'error': 'File not found or you do not own this file'}), 404
-        
-    PAC.query.filter_by(file=file_to_delete).delete()
-    db.session.commit()
+    
+    try:
+        # Delete all PACs associated with this file
+        PAC.query.filter_by(file_id=file_to_delete.id).delete()
+        db.session.commit()
 
-    db.session.delete(file_to_delete)
-    db.session.commit()
+        # Delete the file record from database
+        db.session.delete(file_to_delete)
+        db.session.commit()
+
+        # Delete the encrypted file from filesystem
+        encrypted_files_dir = os.path.join(current_app.config['UPLOAD_FOLDER'], ENCRYPTED_FILES_DIR)
+        file_path = os.path.join(encrypted_files_dir, file_uuid)
+        
+        if os.path.exists(file_path):
+            try:
+                os.remove(file_path)
+            except OSError as e:
+                current_app.logger.error(f"Error deleting file from filesystem {file_path}: {e}")
+                return jsonify({'error': 'File deletion failed'}), 500
+        else:
+            current_app.logger.warning(f"Encrypted file not found in filesystem: {file_path}")
     
-    file_path = os.path.join(current_app.config['UPLOAD_FOLDER'], filename)
-    if os.path.exists(file_path):
-        try:
-            os.remove(file_path)
-        except OSError as e:
-            current_app.logger.error(f"Error deleting file from filesystem {file_path}: {e}")
-            return jsonify({'error': 'File deletion failed'}), 500
+    except Exception as e:
+        db.session.rollback()
+        current_app.logger.error(f"Error during file deletion: {e}")
+        return jsonify({'error': 'File deletion failed'}), 500
     
-    return jsonify({'message': 'File deleted successfully'}), 200
+    return jsonify({'message': 'File and associated PACs deleted successfully'}), 200
 
 def get_user_pacs(user_id: int, is_recipient: bool) -> list:
     """Get PACs for a user, either sent or received.
@@ -307,6 +309,7 @@ def get_user_pacs(user_id: int, is_recipient: bool) -> list:
             continue  # Skip if file not found
             
         pac_data = {
+            'pac_id': pac.id,
             'file_uuid': file.uuid,
             'file_name': file.filename,
             'mime_type': file.mime_type,
