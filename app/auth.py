@@ -1,4 +1,4 @@
-from flask import Blueprint, request, jsonify, session, g, current_app
+from flask import Blueprint, request, jsonify, g, current_app
 from .models import db, User, UserKeys, Nonce
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import padding
@@ -9,6 +9,7 @@ import time
 from datetime import datetime, timedelta, timezone
 import secrets
 import os
+import base64
 
 NONCE_LIFESPAN = int(os.getenv('NONCE_LIFESPAN', 300)) 
 TIMESTAMP_TOLERANCE = int(os.getenv('TIMESTAMP_TOLERANCE', 10)) 
@@ -27,12 +28,12 @@ def verify_request_auth():
     Returns (success, user, error_message, status_code) tuple."""
     
     # Get authentication data from headers
-    user_id = request.headers.get('X-User-ID')
+    user_uuid = request.headers.get('X-User-UUID')
     nonce = request.headers.get('X-Nonce')
     signature_hex = request.headers.get('X-Signature')
 
-    if not user_id or not nonce or not signature_hex:
-        return False, None, 'Authentication required: Missing X-User-ID, X-Nonce, or X-Signature headers', 401
+    if not user_uuid or not nonce or not signature_hex:
+        return False, None, 'Authentication required: Missing X-User-UUID, X-Nonce, or X-Signature headers', 401
 
     # Get the request payload for signature verification
     payload = request.get_data()
@@ -40,7 +41,7 @@ def verify_request_auth():
         return False, None, 'Authentication failed: Request payload is required for signature verification', 401
 
     # Verify the nonce
-    db_nonce = Nonce.query.filter_by(username=user_id, nonce=nonce, used=False).first()
+    db_nonce = Nonce.query.filter_by(user_uuid=user_uuid, nonce=nonce, used=False).first()
     if not db_nonce:
         return False, None, 'Authentication failed: Invalid or expired nonce', 401
 
@@ -64,7 +65,7 @@ def verify_request_auth():
         return False, None, 'Authentication failed: Invalid signature format', 401
 
     # Verify the signature using the request payload
-    if not verify_signature_authorization(user_id, payload, signature):
+    if not verify_signature_authorization(user_uuid, payload, signature):
         # Mark nonce as used and reject
         db_nonce.used = True
         db.session.commit()
@@ -75,9 +76,9 @@ def verify_request_auth():
     db.session.commit()
 
     # Fetch the user
-    user = User.query.filter_by(username=user_id).first()
+    user = User.query.filter_by(uuid=user_uuid).first()
     if not user:
-        current_app.logger.error(f"Anomaly: Signature valid for user {user_id} but user not found in DB.")
+        current_app.logger.error(f"Anomaly: Signature valid for user {user_uuid} but user not found in DB.")
         return False, None, 'Authentication failed: User data inconsistency', 500
 
     return True, user, None, None
@@ -93,16 +94,16 @@ def login_required(f):
     decorated_function.__name__ = f.__name__
     return decorated_function
 
-def verify_signature_authorization(username, payload, signature):
+def verify_signature_authorization(user_uuid, payload, signature):
     """Verify the signature of a request payload.
     Args:
-        username: The username of the user
+        user_uuid: The UUID of the user
         payload: The raw request payload (bytes)
         signature: The signature to verify (bytes)
     Returns:
         bool: True if signature is valid, False otherwise
     """
-    user = User.query.filter_by(username=username).first()
+    user = User.query.filter_by(uuid=user_uuid).first()
     if not user or not user.keys or not user.keys.identity_key_public:
         return False
 
@@ -139,6 +140,11 @@ def register():
         "signed_prekey_signature": str,
         "opks": dict (may not use these)
     }
+    Returns:
+    {
+        "message": "User and keys registered successfully",
+        "user_uuid": "generated UUID"
+    }
     """
     data = request.get_json()
     username = data.get('username')
@@ -157,7 +163,7 @@ def register():
         else:
             return jsonify({'error': 'Email already exists'}), 400
 
-    # Password is not stored, authentication is key-based
+    # Create new user with UUID
     new_user = User(username=username, email=email)
     db.session.add(new_user)
     db.session.commit()
@@ -173,14 +179,17 @@ def register():
 
     new_user_keys = UserKeys(
         user_id=new_user.id,
-        identity_key=identity_key_bytes,
-        signed_prekey=signed_prekey_bytes,
+        identity_key_public=identity_key_bytes,
+        signed_prekey_public=signed_prekey_bytes,
         opks=opks
     )
     db.session.add(new_user_keys)
     db.session.commit()
 
-    return jsonify({'message': 'User and keys registered successfully'}), 201
+    return jsonify({
+        'message': 'User and keys registered successfully',
+        'user_uuid': new_user.uuid
+    }), 201
 
 @auth_bp.route('/login', methods=['POST'])
 def login():
@@ -189,42 +198,75 @@ def login():
     if not success:
         return jsonify({'error': error_message}), status_code
 
-    # Set session for browser-based authentication
-    session['username'] = user.username # NOTE dont think we should be using session as this is a rest API
-    # Dont even think we need a login endpoint, as the client should be able to authenticate with the signature and nonce
-    return jsonify({'message': 'Authentication successful'}), 200
-
-@auth_bp.route('/logout', methods=['POST'])
-def logout():
-    # see login() comments
-    session.pop('username', None)
-    return jsonify({'message': 'Logged out successfully'}), 200
+    return jsonify({
+        'message': 'Authentication successful',
+        'user_uuid': user.uuid
+    }), 200
 
 @auth_bp.route('/nonce', methods=['POST'])
 def get_nonce():
-    """Generate a new nonce for a user"""
+    """Generate a new nonce for a user.
+    Expected JSON input:
+    {
+        "user_uuid": "user's UUID"
+    }
+    Returns:
+    {
+        "nonce": "generated nonce",
+        "timestamp": "ISO format timestamp"
+    }
+    """
     data = request.get_json()
     if not data:
         return jsonify({'error': 'Request body missing'}), 400
 
-    # this should be a user id not username
-    user_id = data.get('user_id')
-    if not user_id:
-        return jsonify({'error': 'User ID required'}), 400
+    user_uuid = data.get('user_uuid')
+    if not user_uuid:
+        return jsonify({'error': 'User UUID required'}), 400
 
-    user = User.query.filter_by(user_id=user_id).first()
+    user = User.query.filter_by(uuid=user_uuid).first()
     if not user:
         return jsonify({'error': 'User not found'}), 404
 
-    nonce = secrets.token_hex(32) 
+    nonce = secrets.token_hex(32)
+    timestamp = datetime.now(timezone.utc)
     
     new_nonce = Nonce(
-        user_id=user_id,
+        user_uuid=user_uuid,
         nonce=nonce,
+        timestamp=timestamp,
+        used=False
     )
     db.session.add(new_nonce)
     db.session.commit()
     
     return jsonify({
         'nonce': nonce,
-    }), 200 
+    }), 200
+
+@auth_bp.route('/user/<username>', methods=['GET'])
+@login_required
+def get_user_by_username(username):
+    """Get user information by username.
+    """
+    user = User.query.filter_by(username=username).first()
+    
+    if not user:
+        return jsonify({'error': 'User not found'}), 404
+        
+    if not user.keys:
+        return jsonify({'error': 'User has no keys registered'}), 404
+    
+    try:
+        response = {
+            'uuid': user.uuid,
+            'username': user.username,
+            'email': user.email,
+            'identity_key_public': base64.b64encode(user.keys.identity_key_public).decode('utf-8'),
+            'signed_prekey_public': base64.b64encode(user.keys.signed_prekey_public).decode('utf-8'),
+            'signed_prekey_signature': base64.b64encode(user.keys.signed_prekey_signature).decode('utf-8'),
+            'opks': user.keys.opks
+        }
+        return jsonify(response), 200
+    except Exception as e:
+        return jsonify({'error': f'Error encoding user keys: {str(e)}'}), 500 
