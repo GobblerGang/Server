@@ -89,16 +89,26 @@ def create_app(config_name='default'):
             'status': 'running',
             'message': 'File Sharing Server is running',
             'endpoints': {
-                'register': '/api/register',
-                'login': '/api/login',
-                'logout': '/api/logout',
-                'files': '/api/files',
-                'upload': '/api/files/upload',
-                'download': '/api/files/download/<filename>',
-                'share': '/api/files/share',
-                'revoke': '/api/files/revoke',
-                'delete': '/api/files/delete/<filename>',
-                'nonce': '/api/nonce' # Add nonce endpoint
+                'auth': {
+                    'register': '/api/register',
+                    'login': '/api/login',
+                    'logout': '/api/logout',
+                    'nonce': '/api/nonce'
+                },
+                'files': {
+                    'list': '/api/files',
+                    'upload': '/api/files/upload',
+                    'download': '/api/files/download/<file_uuid>',
+                    'share': '/api/files/share',
+                    'revoke': '/api/files/revoke/<pac_id>',
+                    'delete': '/api/files/delete/<file_uuid>',
+                    'owned': '/api/files/owned',
+                    'pacs': '/api/files/pacs'
+                },
+                'users': {
+                    'get_by_username': '/api/users/<username>',
+                    'get_keys': '/api/users/keys/<user_uuid>'
+                }
             }
         })
 
