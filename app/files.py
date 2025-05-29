@@ -10,6 +10,14 @@ files_bp = Blueprint('files', __name__)
 @files_bp.route('/', methods=['GET'])
 @login_required
 def get_files():
+    # TODO: this should return additional metadata with each file: 
+    #  {
+    #         'file_id': self.file_id,
+    #         'name': self.name,
+    #         'mime_type': self.mime_type,
+    #         'owner_name': self.owner_name
+    #   }
+    
     current_user = g.user
 
     owned_files_list = File.query.filter_by(owner=current_user).all()
