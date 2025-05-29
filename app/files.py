@@ -122,29 +122,45 @@ def upload_file():
         'file_uuid': new_file.uuid
     }), 201
 
-@files_bp.route('/download/<filename>', methods=['GET'])
+@files_bp.route('/download/<file_uuid>', methods=['GET'])
 @login_required
-def download_file(filename):
-    current_user = g.user #getting user form our auth header
+def download_file(file_uuid):
+    current_user_uuid = g.user
 
-    file_to_download = File.query.filter_by(filename=filename).first()
+    # Find the file and verify access
+    file_to_download = File.query.filter_by(uuid=file_uuid).first()
     
     if not file_to_download:
         return jsonify({'error': 'File not found'}), 404
         
-    is_owner = (file_to_download.owner == current_user)
+    # Check if user is owner or has valid PAC
+    is_owner = (file_to_download.owner == current_user_uuid)
     has_valid_pac = PAC.query.filter_by(
         file=file_to_download,
-        recipient=current_user,
+        recipient=current_user_uuid,
         revoked=False
     ).first() is not None
 
     if not is_owner and not has_valid_pac:
         return jsonify({'error': 'Access denied'}), 403
     
-    file_content_bytes = file_to_download.encrypted_blob
-
-    return send_file(file_content_bytes, as_attachment=True, download_name=filename, mimetype=file_to_download.mime_type or 'application/octet-stream')
+    # Get the encrypted file from filesystem
+    encrypted_files_dir = os.path.join(current_app.config['UPLOAD_FOLDER'], ENCRYPTED_FILES_DIR)
+    file_path = os.path.join(encrypted_files_dir, file_uuid)
+    
+    if not os.path.exists(file_path):
+        return jsonify({'error': 'Encrypted file not found'}), 404
+        
+    try:
+        with open(file_path, 'rb') as f:
+            encrypted_blob = f.read()
+            
+        return jsonify({
+            'encrypted_blob': base64.b64encode(encrypted_blob).decode('utf-8')
+        }), 200
+    except Exception as e:
+        current_app.logger.error(f"Error reading encrypted file: {e}")
+        return jsonify({'error': 'Failed to read encrypted file'}), 500
 
 @files_bp.route('/share', methods=['POST'])
 @login_required
