@@ -353,4 +353,40 @@ def get_pacs():
     return jsonify({
         'sent_pacs': sent_pacs,
         'received_pacs': received_pacs
+    }), 200
+
+@files_bp.route('/owned', methods=['GET'])
+@login_required
+def get_owned_files():
+    """Get all files owned by the authenticated user.
+    
+    Returns:
+        JSON response with list of files:
+        {
+            "files": [
+                {
+                    "uuid": str,
+                    "filename": str,
+                    "mime_type": str,
+                    "upload_date": str (ISO format)
+                }
+            ]
+        }
+    """
+    current_user = g.user
+    
+    # Get all files owned by the user
+    owned_files = File.query.filter_by(owner_id=current_user.id).all()
+    
+    files_list = []
+    for file in owned_files:
+        files_list.append({
+            'uuid': file.uuid,
+            'filename': file.filename,
+            'mime_type': file.mime_type,
+            'upload_date': file.upload_date.isoformat()
+        })
+    
+    return jsonify({
+        'files': files_list
     }), 200 
