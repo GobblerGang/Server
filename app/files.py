@@ -11,21 +11,6 @@ files_bp = Blueprint('files', __name__)
 # Constants
 ENCRYPTED_FILES_DIR = 'encrypted_file_blobs'
 
-@files_bp.route('/', methods=['GET'])
-@login_required
-def get_files():
-    current_user = g.user
-
-    owned_files_list = File.query.filter_by(owner=current_user).all()
-    owned_filenames = [f.filename for f in owned_files_list]
-
-    shared_pacs = PAC.query.filter_by(recipient=current_user, revoked=False).all()
-    shared_filenames = [pac.file.filename for pac in shared_pacs if pac.file]
-    
-    return jsonify({
-        'owned_files': owned_filenames,
-        'shared_files': shared_filenames
-    }), 200
 
 def save_encrypted_file(encrypted_blob: bytes, file_uuid: str) -> bool:
     """Save an encrypted file to the filesystem.

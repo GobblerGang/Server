@@ -96,7 +96,6 @@ def create_app(config_name='default'):
                     'nonce': '/api/nonce'
                 },
                 'files': {
-                    'list': '/api/files',
                     'upload': '/api/files/upload',
                     'download': '/api/files/download/<file_uuid>',
                     'share': '/api/files/share',
