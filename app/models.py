@@ -34,7 +34,6 @@ class File(db.Model):
     file_nonce = db.Column(db.LargeBinary, nullable=False)                  
     k_file_encrypted = db.Column(db.LargeBinary, nullable=False)            
     k_file_nonce = db.Column(db.LargeBinary, nullable=False)                
-    upload_date = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
     owner_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
     mime_type = db.Column(db.String(100), nullable=True)
     pacs = db.relationship('PAC', backref='file', lazy='dynamic')

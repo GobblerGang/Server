@@ -16,7 +16,6 @@ CREATE TABLE files (
 	file_nonce BLOB NOT NULL, 
 	k_file_encrypted BLOB NOT NULL, 
 	k_file_nonce BLOB NOT NULL, 
-	upload_date DATETIME NOT NULL, 
 	owner_id INTEGER NOT NULL, 
 	mime_type VARCHAR(100), 
 	PRIMARY KEY (id), 
