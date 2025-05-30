@@ -6,7 +6,6 @@ import base64
 users_bp = Blueprint('users', __name__)
 
 @users_bp.route('/<username>', methods=['GET'])
-@login_required
 def get_user_by_username(username):
     """Get user information by username.
     
@@ -35,6 +34,7 @@ def get_user_by_username(username):
             'uuid': user.uuid,
             'username': user.username,
             'email': user.email,
+            'salt': user.salt,
             'identity_key_public': base64.b64encode(user.keys.identity_key_public).decode('utf-8'),
             'signed_prekey_public': base64.b64encode(user.keys.signed_prekey_public).decode('utf-8'),
             'signed_prekey_signature': base64.b64encode(user.keys.signed_prekey_signature).decode('utf-8'),
