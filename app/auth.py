@@ -183,7 +183,7 @@ def register():
             "uuid": str,
             "username": str,
             "email": str,
-            "salt": str (base64 encoded)
+            "salt": str (16 bytes)
         },
         "keys": {
             "identity_key_public": str (base64 encoded),
@@ -257,9 +257,6 @@ def register():
 
     # Validate base64 encoding for all keys and salt
     try:
-        # Decode user salt
-        salt_bytes = base64.b64decode(salt)
-        
         # Decode all keys
         identity_key_bytes = base64.b64decode(identity_key)
         signed_prekey_bytes = base64.b64decode(signed_prekey)
@@ -277,7 +274,7 @@ def register():
         uuid=user_uuid,
         username=username,
         email=email,
-        salt=salt_bytes  # Store decoded salt
+        salt=salt  # Store the base64 encoded salt string
     )
     db.session.add(new_user)
     db.session.commit()
