@@ -149,14 +149,15 @@ def create_kek(user, kek_data):
         updated_at = datetime.fromisoformat(kek_data['updated_at'].replace('Z', '+00:00'))
     except ValueError:
         return False, 'Invalid timestamp format (expected ISO 8601)', 400
+    
+    
+    # try:
+    #     # Decode base64 strings to bytes
+    # except Exception as e:
+    #     return False, f'Invalid base64 encoding: {str(e)}', 400
         
-    try:
-        # Decode base64 strings to bytes
-        enc_kek_cyphertext_bytes = base64.b64decode(kek_data['enc_kek_cyphertext'])
-        nonce_bytes = base64.b64decode(kek_data['nonce'])
-    except Exception as e:
-        return False, f'Invalid base64 encoding: {str(e)}', 400
-        
+    nonce_bytes = kek_data['nonce']
+    enc_kek_cyphertext_bytes = kek_data['enc_kek_cyphertext']
     try:
         # Create new KEK record
         new_kek = KeyEncryptionKey(
@@ -287,8 +288,8 @@ def register():
     db.session.add(new_user_keys)
 
     # Create KEK with decoded values
-    kek_data['enc_kek_cyphertext'] = enc_kek_cyphertext_bytes
-    kek_data['nonce'] = nonce_bytes
+    # kek_data['enc_kek_cyphertext'] = enc_kek_cyphertext_bytes
+    # kek_data['nonce'] = nonce_bytes
     success, error_message, status_code = create_kek(new_user, kek_data)
     if not success:
         # Clean up user and keys if KEK creation fails
