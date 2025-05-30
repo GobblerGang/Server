@@ -367,3 +367,113 @@ def generate_uuid():
         'error': 'Failed to generate unique UUID'
     }), 500
 
+@auth_bp.route('/change-password', methods=['PUT'])
+@login_required
+def change_password():
+    """Update user's Key Encryption Key (KEK) after password change.
+    
+    Expected JSON payload:
+    {
+        "enc_kek_cyphertext": str (base64 encoded),
+        "nonce": str (base64 encoded),
+        "updated_at": str (ISO format timestamp)
+    }
+    
+    Returns:
+        JSON response with updated KEK information:
+        {
+            "uuid": str,
+            "user_uuid": str,
+            "enc_kek_cyphertext": str (base64 encoded),
+            "nonce": str (base64 encoded),
+            "updated_at": str (ISO format)
+        }
+    """
+    current_user = g.user
+    data = request.get_json()
+    
+    if not data:
+        return jsonify({'error': 'No JSON data provided'}), 400
+        
+    # Extract and validate required fields
+    enc_kek_cyphertext = data.get('enc_kek_cyphertext')
+    nonce = data.get('nonce')
+    updated_at_str = data.get('updated_at')
+    
+    if not all([enc_kek_cyphertext, nonce, updated_at_str]):
+        return jsonify({'error': 'Missing required fields: enc_kek_cyphertext, nonce, updated_at'}), 400
+        
+    try:
+        # Parse the timestamp
+        updated_at = datetime.fromisoformat(updated_at_str.replace('Z', '+00:00'))
+    except ValueError:
+        return jsonify({'error': 'Invalid timestamp format (expected ISO 8601)'}), 400
+        
+    try:
+        # Decode base64 strings to bytes
+        enc_kek_cyphertext_bytes = base64.b64decode(enc_kek_cyphertext)
+        nonce_bytes = base64.b64decode(nonce)
+    except Exception as e:
+        return jsonify({'error': f'Invalid base64 encoding: {str(e)}'}), 400
+        
+    try:
+        # Find user's existing KEK
+        existing_kek = KeyEncryptionKey.query.filter_by(user_id=current_user.id).first()
+        if not existing_kek:
+            return jsonify({'error': 'No KEK found for user'}), 404
+            
+        # Update KEK with new values
+        existing_kek.enc_kek_cyphertext = enc_kek_cyphertext_bytes
+        existing_kek.nonce = nonce_bytes
+        existing_kek.updated_at = updated_at
+        
+        db.session.commit()
+        
+        return jsonify({
+            'uuid': existing_kek.uuid,
+            'user_uuid': current_user.uuid,
+            'enc_kek_cyphertext': enc_kek_cyphertext,
+            'nonce': nonce,
+            'updated_at': existing_kek.updated_at.isoformat()
+        }), 200
+        
+    except Exception as e:
+        db.session.rollback()
+        current_app.logger.error(f"Error updating KEK: {e}")
+        return jsonify({'error': 'Failed to update KEK'}), 500
+
+@auth_bp.route('/kek', methods=['GET'])
+@login_required
+def get_kek():
+    """Get the user's Key Encryption Key (KEK).
+    
+    Returns:
+        JSON response with KEK information:
+        {
+            "uuid": str,
+            "user_uuid": str,
+            "enc_kek_cyphertext": str (base64 encoded),
+            "nonce": str (base64 encoded),
+            "updated_at": str (ISO format)
+        }
+    """
+    current_user = g.user
+    
+    try:
+        # Find user's KEK
+        kek = KeyEncryptionKey.query.filter_by(user_id=current_user.id).first()
+        if not kek:
+            return jsonify({'error': 'No KEK found for user'}), 404
+            
+        return jsonify({
+            'uuid': kek.uuid,
+            'user_uuid': current_user.uuid,
+            'enc_kek_cyphertext': base64.b64encode(kek.enc_kek_cyphertext).decode('utf-8'),
+            'nonce': base64.b64encode(kek.nonce).decode('utf-8'),
+            'updated_at': kek.updated_at.isoformat()
+        }), 200
+        
+    except Exception as e:
+        current_app.logger.error(f"Error retrieving KEK: {e}")
+        return jsonify({'error': 'Failed to retrieve KEK'}), 500
+

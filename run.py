@@ -16,6 +16,8 @@ def print_endpoints(app):
     print("  POST /logout       - User logout")
     print("  GET  /nonce        - Get authentication nonce")
     print("  GET  /generate-uuid - Generate unique UUID for registration")
+    print("  PUT  /change-password - Update KEK after password change")
+    print("  GET  /kek          - Get user's Key Encryption Key")
     
     # File endpoints
     print("\nFile Endpoints (/api/files):")
