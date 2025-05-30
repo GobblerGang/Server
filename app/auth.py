@@ -244,29 +244,29 @@ def get_nonce():
         'nonce': nonce,
     }), 200
 
-@auth_bp.route('/user/<username>', methods=['GET'])
-@login_required
-def get_user_by_username(username):
-    """Get user information by username.
-    """
-    user = User.query.filter_by(username=username).first()
+# @auth_bp.route('/user/<username>', methods=['GET'])
+# @login_required
+# def get_user_by_username(username):
+#     """Get user information by username.
+#     """
+#     user = User.query.filter_by(username=username).first()
     
-    if not user:
-        return jsonify({'error': 'User not found'}), 404
+#     if not user:
+#         return jsonify({'error': 'User not found'}), 404
         
-    if not user.keys:
-        return jsonify({'error': 'User has no keys registered'}), 404
+#     if not user.keys:
+#         return jsonify({'error': 'User has no keys registered'}), 404
     
-    try:
-        response = {
-            'uuid': user.uuid,
-            'username': user.username,
-            'email': user.email,
-            'identity_key_public': base64.b64encode(user.keys.identity_key_public).decode('utf-8'),
-            'signed_prekey_public': base64.b64encode(user.keys.signed_prekey_public).decode('utf-8'),
-            'signed_prekey_signature': base64.b64encode(user.keys.signed_prekey_signature).decode('utf-8'),
-            'opks': user.keys.opks
-        }
-        return jsonify(response), 200
-    except Exception as e:
-        return jsonify({'error': f'Error encoding user keys: {str(e)}'}), 500 
+#     try:
+#         response = {
+#             'uuid': user.uuid,
+#             'username': user.username,
+#             'email': user.email,
+#             'identity_key_public': base64.b64encode(user.keys.identity_key_public).decode('utf-8'),
+#             'signed_prekey_public': base64.b64encode(user.keys.signed_prekey_public).decode('utf-8'),
+#             'signed_prekey_signature': base64.b64encode(user.keys.signed_prekey_signature).decode('utf-8'),
+#             'opks': user.keys.opks
+#         }
+#         return jsonify(response), 200
+#     except Exception as e:
+#         return jsonify({'error': f'Error encoding user keys: {str(e)}'}), 500 
