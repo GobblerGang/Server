@@ -1,6 +1,8 @@
 from . import db
 from datetime import datetime
 import uuid
+import json
+import base64
 
 class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -73,3 +75,40 @@ class Nonce(db.Model):
 
     def __repr__(self):
         return f'<Nonce {self.nonce} for user {self.user_uuid}>'
+
+class KeyEncryptionKey(db.Model):
+    __tablename__ = 'key_encryption_keys'
+    id = db.Column(db.Integer, primary_key=True)
+    uuid = db.Column(db.String(36), unique=True, nullable=False, default=lambda: str(uuid.uuid4()))
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    encrypted_kek = db.Column(db.LargeBinary, nullable=False)  # The KEK encrypted with master password derived key
+    nonce = db.Column(db.LargeBinary, nullable=False)         # Nonce used for encryption
+    tag = db.Column(db.Text, nullable=False)                  # JSON stringified associated data
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    
+    # Relationship with User
+    user = db.relationship('User', backref=db.backref('keks', lazy='dynamic'))
+    
+    def __repr__(self):
+        return f'<KeyEncryptionKey {self.uuid}>'
+        
+    @property
+    def associated_data(self):
+        """Get the associated data as a dictionary."""
+        return json.loads(self.tag)
+        
+    @associated_data.setter
+    def associated_data(self, data):
+        """Set the associated data from a dictionary."""
+        self.tag = json.dumps(data)
+        
+    def to_dict(self):
+        """Convert the KEK to a dictionary representation."""
+        return {
+            'uuid': self.uuid,
+            'user_uuid': self.user.uuid,
+            'encrypted_kek': base64.b64encode(self.encrypted_kek).decode('utf-8'),
+            'nonce': base64.b64encode(self.nonce).decode('utf-8'),
+            'associated_data': self.associated_data,
+            'created_at': self.created_at.isoformat()
+        }
