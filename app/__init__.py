@@ -5,8 +5,6 @@ import ssl
 from flask_sqlalchemy import SQLAlchemy
 from dotenv import load_dotenv
 import logging
-import uuid
-import time # Import time for nonce timestamping
 from urllib.parse import quote_plus # Import quote_plus for URL encoding
 from flask_apscheduler import APScheduler # Import APScheduler
 
@@ -91,8 +89,6 @@ def create_app(config_name='default'):
             'endpoints': {
                 'auth': {
                     'register': '/api/register',
-                    'login': '/api/login',
-                    'logout': '/api/logout',
                     'nonce': '/api/nonce',
                     'generate_uuid': '/api/generate-uuid',
                     'change_password': '/api/change-password',
