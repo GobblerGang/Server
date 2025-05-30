@@ -170,13 +170,13 @@ def register():
     db.session.commit()
 
     try:
-        identity_key_bytes = bytes.fromhex(identity_key) if isinstance(identity_key, str) else identity_key
-        signed_prekey_bytes = bytes.fromhex(signed_prekey) if isinstance(signed_prekey, str) else signed_prekey
-    except ValueError:
+        identity_key_bytes = base64.b64decode(identity_key) if isinstance(identity_key, str) else identity_key
+        signed_prekey_bytes = base64.b64decode(signed_prekey) if isinstance(signed_prekey, str) else signed_prekey
+    except (ValueError, base64.binascii.Error):
         # Clean up the user if key format is invalid after user creation
         db.session.delete(new_user)
         db.session.commit()
-        return jsonify({'error': 'Invalid key format (expected hex string or bytes)'}), 400
+        return jsonify({'error': 'Invalid key format (expected base64 string or bytes)'}), 400
 
     new_user_keys = UserKeys(
         user_id=new_user.id,
@@ -270,4 +270,4 @@ def get_nonce():
 #         }
 #         return jsonify(response), 200
 #     except Exception as e:
-#         return jsonify({'error': f'Error encoding user keys: {str(e)}'}), 500 
+#         return jsonify({'error': f'Error encoding user keys: {str(e)}'}), 500
