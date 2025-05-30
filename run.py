@@ -25,6 +25,7 @@ def print_endpoints(app):
     print("  DELETE /delete/<uuid>       - Delete file")
     print("  GET    /owned               - List owned files")
     print("  GET    /pacs                - List PACs (sent and received)")
+    print("  GET    /info/<uuid>         - Get detailed file information")
     
     # User endpoints
     print("\nUser Endpoints (/api/users):")

@@ -391,4 +391,55 @@ def get_owned_files():
     
     return jsonify({
         'files': files_list
-    }), 200 
+    }), 200
+
+@files_bp.route('/info/<file_uuid>', methods=['GET'])
+@login_required
+def get_file_info(file_uuid):
+    """Get detailed information about a file by UUID.
+    
+    Returns:
+        JSON response with file information:
+        {
+            "uuid": str,
+            "filename": str,
+            "mime_type": str,
+            "file_nonce": str (base64 encoded),
+            "k_file_encrypted": str (base64 encoded),
+            "k_file_nonce": str (base64 encoded),
+            "owner": {
+                "uuid": str,
+                "username": str,
+                "email": str
+            }
+        }
+    """
+    current_user = g.user
+
+    # Find the file and verify ownership
+    file = File.query.filter_by(uuid=file_uuid).first()
+    
+    if not file:
+        return jsonify({'error': 'File not found'}), 404
+        
+    if file.owner != current_user:
+        return jsonify({'error': 'Access denied - you do not own this file'}), 403
+    
+    try:
+        response = {
+            'uuid': file.uuid,
+            'filename': file.filename,
+            'mime_type': file.mime_type,
+            'file_nonce': base64.b64encode(file.file_nonce).decode('utf-8'),
+            'k_file_encrypted': base64.b64encode(file.k_file_encrypted).decode('utf-8'),
+            'k_file_nonce': base64.b64encode(file.k_file_nonce).decode('utf-8'),
+            'owner': {
+                'uuid': file.owner.uuid,
+                'username': file.owner.username,
+                'email': file.owner.email
+            }
+        }
+        return jsonify(response), 200
+    except Exception as e:
+        current_app.logger.error(f"Error encoding file info: {e}")
+        return jsonify({'error': 'Error encoding file information'}), 500 
