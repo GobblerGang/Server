@@ -1,6 +1,5 @@
-from flask import Blueprint, request, jsonify, send_file, current_app, session, g
+from flask import Blueprint, request, jsonify, current_app, g
 import os
-from werkzeug.utils import secure_filename
 from .auth import login_required
 from .models import db, User, File, PAC
 from datetime import datetime
@@ -39,6 +38,30 @@ def save_encrypted_file(encrypted_blob: bytes, file_uuid: str) -> bool:
 @files_bp.route('/upload', methods=['POST'])
 @login_required
 def upload_file():
+    """Upload an encrypted file to the server.
+    
+    Expected JSON payload:
+    {
+        "file_name": str,
+        "enc_file_ciphertext": str (base64 encoded),
+        "mime_type": str,
+        "file_nonce": str (base64 encoded),
+        "enc_file_k": str (base64 encoded),
+        "k_file_nonce": str (base64 encoded)
+    }
+    
+    Returns:
+        JSON response with file information:
+        {
+            "message": str,
+            "file_uuid": str
+        }
+        
+    Error Responses:
+        400: Missing required fields or invalid base64 encoding
+        400: File with same name already exists for user
+        500: Failed to save encrypted file
+    """
     current_user = g.user
     data = request.get_json()
     
@@ -110,6 +133,27 @@ def upload_file():
 @files_bp.route('/download/<file_uuid>', methods=['GET'])
 @login_required
 def download_file(file_uuid):
+    """Download an encrypted file from the server.
+    
+    URL Parameters:
+        file_uuid: str - The UUID of the file to download
+        
+    Returns:
+        JSON response with encrypted file data:
+        {
+            "encrypted_blob": str (base64 encoded)
+        }
+        
+    Error Responses:
+        404: File not found
+        403: Access denied (user is not owner and has no valid PAC)
+        500: Failed to read encrypted file
+        
+    Note:
+        User must either:
+        - Be the owner of the file, or
+        - Have a valid Pre-Authorized Access Certificate (PAC)
+    """
     current_user = g.user
 
     # Find the file and verify access
@@ -150,6 +194,39 @@ def download_file(file_uuid):
 @files_bp.route('/share', methods=['POST'])
 @login_required
 def share_file():
+    """Share a file with another user by creating a Pre-Authorized Access Certificate (PAC).
+    
+    Expected JSON payload:
+    {
+        "recipient_uuid": str,
+        "file_uuid": str,
+        "valid_until": str (ISO format timestamp, optional),
+        "encrypted_file_key": str (base64 encoded),
+        "signature": str (base64 encoded),
+        "sender_ephemeral_public": str (base64 encoded),
+        "k_file_nonce": str (base64 encoded)
+    }
+    
+    Returns:
+        JSON response with success message:
+        {
+            "message": str
+        }
+        
+    Error Responses:
+        400: Missing required fields
+        400: Invalid base64 encoding for keys/signature/nonce
+        400: Invalid date format for valid_until
+        404: File not found
+        404: Recipient user not found
+        403: User is not the owner of the file
+        
+    Note:
+        - All cryptographic values (encrypted_file_key, signature, sender_ephemeral_public, k_file_nonce) 
+          must be base64 encoded
+        - valid_until is optional, if not provided the PAC will not expire
+        - User must be the owner of the file to share it
+    """
     issuer_user = g.user
     data = request.get_json()
 
@@ -189,13 +266,13 @@ def share_file():
         return jsonify({'error': 'Recipient user not found'}), 404
 
     try:
-        # Convert hex strings to bytes
-        encrypted_file_key_bytes = bytes.fromhex(encrypted_file_key)
-        sender_ephemeral_public_bytes = bytes.fromhex(sender_ephemeral_public)
-        signature_bytes = bytes.fromhex(signature)
-        k_file_nonce_bytes = bytes.fromhex(k_file_nonce)
+        # Convert base64 strings to bytes
+        encrypted_file_key_bytes = base64.b64decode(encrypted_file_key)
+        sender_ephemeral_public_bytes = base64.b64decode(sender_ephemeral_public)
+        signature_bytes = base64.b64decode(signature)
+        k_file_nonce_bytes = base64.b64decode(k_file_nonce)
     except ValueError:
-        return jsonify({'error': 'Invalid hex format for key, signature, or nonce'}), 400
+        return jsonify({'error': 'Invalid base64 encoding for key, signature, or nonce'}), 400
 
     valid_until_dt = None
     if valid_until_str:
@@ -226,6 +303,27 @@ def share_file():
 @files_bp.route('/revoke/<pac_id>', methods=['POST'])
 @login_required
 def revoke_access(pac_id):
+    """Revoke a Pre-Authorized Access Certificate (PAC) for a shared file.
+    
+    URL Parameters:
+        pac_id: int - The ID of the PAC to revoke
+        
+    Returns:
+        JSON response with success message:
+        {
+            "message": str
+        }
+        
+    Error Responses:
+        404: PAC not found or user is not the issuer
+        400: PAC is already revoked
+        500: Failed to revoke access
+        
+    Note:
+        - Only the original issuer of the PAC can revoke it
+        - Revocation is permanent and cannot be undone
+        - The file itself is not deleted, only the access is revoked
+    """
     current_user_uuid = g.user
 
     # Find the PAC and verify the issuer is the current user
@@ -249,6 +347,29 @@ def revoke_access(pac_id):
 @files_bp.route('/delete/<file_uuid>', methods=['DELETE'])
 @login_required
 def delete_file(file_uuid):
+    """Delete a file and all its associated PACs.
+    
+    URL Parameters:
+        file_uuid: str - The UUID of the file to delete
+        
+    Returns:
+        JSON response with success message:
+        {
+            "message": str
+        }
+        
+    Error Responses:
+        404: File not found or user is not the owner
+        500: Failed to delete file or associated PACs
+        
+    Note:
+        - Only the owner of the file can delete it
+        - This operation is permanent and cannot be undone
+        - All PACs associated with the file will be deleted
+        - Both the database record and the encrypted file blob will be removed
+        - If the file blob is not found in the filesystem, the operation will still succeed
+          but a warning will be logged
+    """
     current_user_uuid = g.user
 
     # Find file by UUID and verify ownership using user UUID
@@ -345,17 +466,17 @@ def get_pacs():
     
     Returns:
         JSON response with two arrays:
-        - sent_pacs: PACs issued by the user
+        - issued_pacs: PACs issued by the user
         - received_pacs: PACs received by the user
     """
     current_user = g.user
     
     # Get both sent and received PACs using the helper function
-    sent_pacs = get_user_pacs(current_user.id, is_recipient=False)
+    issued_pacs = get_user_pacs(current_user.id, is_recipient=False)
     received_pacs = get_user_pacs(current_user.id, is_recipient=True)
     
     return jsonify({
-        'sent_pacs': sent_pacs,
+        'issued': issued_pacs,
         'received_pacs': received_pacs
     }), 200
 
