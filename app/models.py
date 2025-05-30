@@ -1,7 +1,6 @@
 from . import db
 from datetime import datetime
 import uuid
-import json
 import base64
 
 class User(db.Model):
