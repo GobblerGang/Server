@@ -1,5 +1,5 @@
 from flask import Blueprint, request, jsonify, g, current_app
-from .models import db, User, UserKeys, Nonce
+from .models import db, User, UserKeys, Nonce, KeyEncryptionKey
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import padding
 from cryptography.hazmat.primitives.hashes import SHA256
@@ -248,29 +248,77 @@ def get_nonce():
         'nonce': nonce,
     }), 200
 
-# @auth_bp.route('/user/<username>', methods=['GET'])
-# @login_required
-# def get_user_by_username(username):
-#     """Get user information by username.
-#     """
-#     user = User.query.filter_by(username=username).first()
+@auth_bp.route('/kek', methods=['POST'])
+@login_required
+def upload_kek():
+    """Upload a Key Encryption Key (KEK).
     
-#     if not user:
-#         return jsonify({'error': 'User not found'}), 404
+    Expected JSON payload:
+    {
+        "enc_kek_cyphertext": str (base64 encoded),
+        "nonce": str (base64 encoded),
+        "updated_at": str (ISO format timestamp)
+    }
+    
+    Returns:
+        JSON response with KEK information:
+        {
+            "uuid": str,
+            "user_uuid": str,
+            "enc_kek_cyphertext": str (base64 encoded),
+            "nonce": str (base64 encoded),
+            "updated_at": str (ISO format)
+        }
+    """
+    current_user = g.user
+    data = request.get_json()
+    
+    if not data:
+        return jsonify({'error': 'No JSON data provided'}), 400
         
-#     if not user.keys:
-#         return jsonify({'error': 'User has no keys registered'}), 404
+    # Extract and validate required fields
+    enc_kek_cyphertext = data.get('enc_kek_cyphertext')
+    nonce = data.get('nonce')
+    updated_at_str = data.get('updated_at')
     
-#     try:
-#         response = {
-#             'uuid': user.uuid,
-#             'username': user.username,
-#             'email': user.email,
-#             'identity_key_public': base64.b64encode(user.keys.identity_key_public).decode('utf-8'),
-#             'signed_prekey_public': base64.b64encode(user.keys.signed_prekey_public).decode('utf-8'),
-#             'signed_prekey_signature': base64.b64encode(user.keys.signed_prekey_signature).decode('utf-8'),
-#             'opks': user.keys.opks
-#         }
-#         return jsonify(response), 200
-#     except Exception as e:
-#         return jsonify({'error': f'Error encoding user keys: {str(e)}'}), 500
+    if not all([enc_kek_cyphertext, nonce, updated_at_str]):
+        return jsonify({'error': 'Missing required fields: enc_kek_cyphertext, nonce, updated_at'}), 400
+        
+    try:
+        # Parse the timestamp
+        updated_at = datetime.fromisoformat(updated_at_str.replace('Z', '+00:00'))
+    except ValueError:
+        return jsonify({'error': 'Invalid timestamp format (expected ISO 8601)'}), 400
+        
+    try:
+        # Decode base64 strings to bytes
+        enc_kek_cyphertext_bytes = base64.b64decode(enc_kek_cyphertext)
+        nonce_bytes = base64.b64decode(nonce)
+    except Exception as e:
+        return jsonify({'error': f'Invalid base64 encoding: {str(e)}'}), 400
+        
+    try:
+        # Create new KEK record with client-provided timestamp
+        new_kek = KeyEncryptionKey(
+            user=current_user,
+            enc_kek_cyphertext=enc_kek_cyphertext_bytes,
+            nonce=nonce_bytes,
+            updated_at=updated_at
+        )
+        
+        db.session.add(new_kek)
+        db.session.commit()
+        
+        return jsonify({
+            'uuid': new_kek.uuid,
+            'user_uuid': current_user.uuid,
+            'enc_kek_cyphertext': enc_kek_cyphertext,
+            'nonce': nonce,
+            'updated_at': new_kek.updated_at.isoformat()
+        }), 201
+        
+    except Exception as e:
+        db.session.rollback()
+        current_app.logger.error(f"Error creating KEK: {e}")
+        return jsonify({'error': 'Failed to create KEK'}), 500
+

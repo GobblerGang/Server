@@ -81,7 +81,7 @@ class KeyEncryptionKey(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     uuid = db.Column(db.String(36), unique=True, nullable=False, default=lambda: str(uuid.uuid4()))
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
-    encrypted_kek = db.Column(db.LargeBinary, nullable=False)  # The KEK encrypted with master password derived key
+    enc_kek_cyphertext = db.Column(db.LargeBinary, nullable=False)  # The KEK encrypted with master password derived key
     nonce = db.Column(db.LargeBinary, nullable=False)         # Nonce used for encryption
     updated_at = db.Column(db.DateTime, nullable=False)
     
@@ -96,7 +96,7 @@ class KeyEncryptionKey(db.Model):
         return {
             'uuid': self.uuid,
             'user_uuid': self.user.uuid,
-            'encrypted_kek': base64.b64encode(self.encrypted_kek).decode('utf-8'),
+            'enc_kek_cyphertext': base64.b64encode(self.enc_kek_cyphertext).decode('utf-8'),
             'nonce': base64.b64encode(self.nonce).decode('utf-8'),
             'associated_data': self.associated_data,
             'created_at': self.created_at.isoformat()

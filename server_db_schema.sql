@@ -3,6 +3,7 @@ CREATE TABLE user (
 	uuid VARCHAR(36) NOT NULL, 
 	username VARCHAR(80) NOT NULL, 
 	email VARCHAR(120) NOT NULL, 
+	salt VARCHAR(64) NOT NULL, 
 	PRIMARY KEY (id), 
 	UNIQUE (uuid), 
 	UNIQUE (username), 
@@ -21,6 +22,18 @@ CREATE TABLE files (
 	PRIMARY KEY (id), 
 	UNIQUE (uuid), 
 	FOREIGN KEY(owner_id) REFERENCES user (id)
+);
+
+CREATE TABLE key_encryption_keys (
+	id INTEGER NOT NULL AUTO_INCREMENT, 
+	uuid VARCHAR(36) NOT NULL, 
+	user_id INTEGER NOT NULL, 
+	enc_kek_cyphertext BLOB NOT NULL, 
+	nonce BLOB NOT NULL, 
+	updated_at DATETIME NOT NULL, 
+	PRIMARY KEY (id), 
+	UNIQUE (uuid), 
+	FOREIGN KEY(user_id) REFERENCES user (id)
 );
 
 CREATE TABLE nonces (

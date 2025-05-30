@@ -15,6 +15,7 @@ def print_endpoints(app):
     print("  POST /login        - User login")
     print("  POST /logout       - User logout")
     print("  GET  /nonce        - Get authentication nonce")
+    print("  POST /kek          - Upload Key Encryption Key")
     
     # File endpoints
     print("\nFile Endpoints (/api/files):")

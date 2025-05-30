@@ -93,7 +93,8 @@ def create_app(config_name='default'):
                     'register': '/api/register',
                     'login': '/api/login',
                     'logout': '/api/logout',
-                    'nonce': '/api/nonce'
+                    'nonce': '/api/nonce',
+                    'kek': '/api/kek'
                 },
                 'files': {
                     'upload': '/api/files/upload',
