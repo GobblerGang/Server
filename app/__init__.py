@@ -76,8 +76,10 @@ def create_app(config_name='default'):
     # Import and register blueprints
     from .auth import auth_bp, verify_signature_authorization # Import verify_signature_authorization
     from .files import files_bp
+    from .users import users_bp
     app.register_blueprint(auth_bp, url_prefix='/api')
     app.register_blueprint(files_bp, url_prefix='/api/files')
+    app.register_blueprint(users_bp, url_prefix='/api/users')
 
     # Add a simple root route
     @app.route('/')
@@ -87,16 +89,25 @@ def create_app(config_name='default'):
             'status': 'running',
             'message': 'File Sharing Server is running',
             'endpoints': {
-                'register': '/api/register',
-                'login': '/api/login',
-                'logout': '/api/logout',
-                'files': '/api/files',
-                'upload': '/api/files/upload',
-                'download': '/api/files/download/<filename>',
-                'share': '/api/files/share',
-                'revoke': '/api/files/revoke',
-                'delete': '/api/files/delete/<filename>',
-                'nonce': '/api/nonce' # Add nonce endpoint
+                'auth': {
+                    'register': '/api/register',
+                    'login': '/api/login',
+                    'logout': '/api/logout',
+                    'nonce': '/api/nonce'
+                },
+                'files': {
+                    'upload': '/api/files/upload',
+                    'download': '/api/files/download/<file_uuid>',
+                    'share': '/api/files/share',
+                    'revoke': '/api/files/revoke/<pac_id>',
+                    'delete': '/api/files/delete/<file_uuid>',
+                    'owned': '/api/files/owned',
+                    'pacs': '/api/files/pacs'
+                },
+                'users': {
+                    'get_by_username': '/api/users/<username>',
+                    'get_keys': '/api/users/keys/<user_uuid>'
+                }
             }
         })
 
