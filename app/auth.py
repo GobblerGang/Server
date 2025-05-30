@@ -149,6 +149,7 @@ def register():
     data = request.get_json()
     username = data.get('username')
     email = data.get('email')
+    salt = data.get('salt') 
     identity_key = data.get('identity_key_public')
     signed_prekey = data.get('signed_prekey_public')
     opks = data.get('opks')
@@ -164,7 +165,7 @@ def register():
             return jsonify({'error': 'Email already exists'}), 400
 
     # Create new user with UUID
-    new_user = User(username=username, email=email)
+    new_user = User(username=username, email=email, salt=salt)
     db.session.add(new_user)
     db.session.commit()
 
