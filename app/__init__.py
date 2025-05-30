@@ -94,7 +94,7 @@ def create_app(config_name='default'):
                     'login': '/api/login',
                     'logout': '/api/logout',
                     'nonce': '/api/nonce',
-                    'kek': '/api/kek'
+                    'generate_uuid': '/api/generate-uuid'
                 },
                 'files': {
                     'upload': '/api/files/upload',

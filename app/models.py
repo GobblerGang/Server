@@ -6,7 +6,7 @@ import base64
 
 class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    uuid = db.Column(db.String(36), unique=True, nullable=False, default=lambda: str(uuid.uuid4()))
+    uuid = db.Column(db.String(36), unique=True, nullable=False)
     username = db.Column(db.String(80), unique=True, nullable=False)
     email = db.Column(db.String(120), unique=True, nullable=False)
     salt = db.Column(db.String(64), nullable=False)
