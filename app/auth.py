@@ -434,6 +434,11 @@ def change_password():
 def get_kek():
     """Get the user's Key Encryption Key (KEK).
     
+    Expected JSON payload:
+    {
+        "user_uuid": str
+    }
+    
     Returns:
         JSON response with KEK information:
         {
@@ -444,17 +449,36 @@ def get_kek():
             "updated_at": str (ISO format)
         }
     """
-    current_user = g.user
+    data = request.get_json()
+    
+    if not data:
+        return jsonify({'error': 'No JSON data provided'}), 400
+        
+    user_uuid = data.get('user_uuid')
+    if not user_uuid:
+        return jsonify({'error': 'Missing required field: user_uuid'}), 400
+        
+    try:
+        # Validate UUID format
+        uuid_obj = uuid.UUID(user_uuid)
+        if str(uuid_obj) != user_uuid:  # Ensure canonical format
+            return jsonify({'error': 'Invalid UUID format'}), 400
+    except ValueError:
+        return jsonify({'error': 'Invalid UUID format'}), 400
     
     try:
-        # Find user's KEK
-        kek = KeyEncryptionKey.query.filter_by(user_id=current_user.id).first()
+        # Find user and their KEK
+        user = User.query.filter_by(uuid=user_uuid).first()
+        if not user:
+            return jsonify({'error': 'User not found'}), 404
+            
+        kek = KeyEncryptionKey.query.filter_by(user_id=user.id).first()
         if not kek:
             return jsonify({'error': 'No KEK found for user'}), 404
             
         return jsonify({
             'uuid': kek.uuid,
-            'user_uuid': current_user.uuid,
+            'user_uuid': user.uuid,
             'enc_kek_cyphertext': base64.b64encode(kek.enc_kek_cyphertext).decode('utf-8'),
             'nonce': base64.b64encode(kek.nonce).decode('utf-8'),
             'updated_at': kek.updated_at.isoformat()
