@@ -362,11 +362,13 @@ def generate_uuid():
             "uuid": str,
             "message": "UUID generated successfully"
         }
+        
+    Error Responses:
+        500: Failed to generate unique UUID after maximum attempts
     """
     max_attempts = 5  # Prevent infinite loops
-    attempts = 0
     
-    while attempts < max_attempts:
+    for _ in range(max_attempts):
         # Generate new UUID
         new_uuid = str(uuid.uuid4())
         
@@ -377,8 +379,6 @@ def generate_uuid():
                 'uuid': new_uuid,
                 'message': 'UUID generated successfully'
             }), 200
-            
-        attempts += 1
     
     # If we couldn't generate a unique UUID after max attempts
     current_app.logger.error("Failed to generate unique UUID after maximum attempts")
