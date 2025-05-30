@@ -222,6 +222,8 @@ def register():
     email = user_data.get('email')
     salt = user_data.get('salt')
     
+    print(f"\n\nSalt length: {len(salt)}\n\n")
+    
     if not all([user_uuid, username, email, salt]):
         return jsonify({'error': 'Missing required user fields: uuid, username, email, salt'}), 400
         
