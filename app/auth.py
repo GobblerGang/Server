@@ -462,15 +462,13 @@ def change_password():
         current_app.logger.error(f"Error updating KEK: {e}")
         return jsonify({'error': 'Failed to update KEK'}), 500
 
-@auth_bp.route('/kek', methods=['GET'])
-def get_kek():
+@auth_bp.route('/kek/<user_uuid>', methods=['GET'])
+def get_kek(user_uuid):
     """Get the user's Key Encryption Key (KEK).
     
-    Expected JSON payload:
-    {
-        "user_uuid": str
-    }
-    
+    URL Parameters:
+        user_uuid: str - The UUID of the user whose KEK to retrieve
+        
     Returns:
         JSON response with KEK information:
         {
@@ -480,16 +478,13 @@ def get_kek():
             "nonce": str (base64 encoded),
             "updated_at": str (ISO format)
         }
+        
+    Error Responses:
+        400: Invalid UUID format
+        404: User not found
+        404: No KEK found for user
+        500: Failed to retrieve KEK
     """
-    data = request.get_json()
-    
-    if not data:
-        return jsonify({'error': 'No JSON data provided'}), 400
-        
-    user_uuid = data.get('user_uuid')
-    if not user_uuid:
-        return jsonify({'error': 'Missing required field: user_uuid'}), 400
-        
     try:
         # Validate UUID format
         uuid_obj = uuid.UUID(user_uuid)
