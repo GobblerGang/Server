@@ -12,8 +12,6 @@ def print_endpoints(app):
     # Auth endpoints
     print("\nAuthentication Endpoints (/api):")
     print("  POST /register     - Register new user")
-    print("  POST /login        - User login")
-    print("  POST /logout       - User logout")
     print("  GET  /nonce        - Get authentication nonce")
     print("  GET  /generate-uuid - Generate unique UUID for registration")
     print("  PUT  /change-password - Update KEK after password change")

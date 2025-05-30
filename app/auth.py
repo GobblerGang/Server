@@ -278,18 +278,6 @@ def register():
         'user_uuid': new_user.uuid
     }), 201
 
-@auth_bp.route('/login', methods=['POST'])
-def login():
-    # Authenticate user using signature verification and nonce validation
-    success, user, error_message, status_code = verify_request_auth()
-    if not success:
-        return jsonify({'error': error_message}), status_code
-
-    return jsonify({
-        'message': 'Authentication successful',
-        'user_uuid': user.uuid
-    }), 200
-
 @auth_bp.route('/nonce', methods=['POST'])
 def get_nonce():
     """Generate a new nonce for a user.
@@ -443,7 +431,6 @@ def change_password():
         return jsonify({'error': 'Failed to update KEK'}), 500
 
 @auth_bp.route('/kek', methods=['GET'])
-@login_required
 def get_kek():
     """Get the user's Key Encryption Key (KEK).
     
