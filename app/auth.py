@@ -179,14 +179,18 @@ def create_kek(user, kek_data):
 def register():
     """Expected JSON input body structure:
     {
-        "uuid": str,
-        "username": str,
-        "email": str,
-        "salt": str,
-        "identity_key_public": str,
-        "signed_prekey_public": str,
-        "signed_prekey_signature": str,
-        "opks": dict,
+        "user": {
+            "uuid": str,
+            "username": str,
+            "email": str,
+            "salt": str (base64 encoded)
+        },
+        "keys": {
+            "identity_key_public": str (base64 encoded),
+            "signed_prekey_public": str (base64 encoded),
+            "signed_prekey_signature": str (base64 encoded),
+            "opks": dict
+        },
         "kek": {
             "enc_kek_cyphertext": str (base64 encoded),
             "nonce": str (base64 encoded),
@@ -200,18 +204,35 @@ def register():
     }
     """
     data = request.get_json()
-    user_uuid = data.get('uuid')
-    username = data.get('username')
-    email = data.get('email')
-    salt = data.get('salt') 
-    identity_key = data.get('identity_key_public')
-    signed_prekey = data.get('signed_prekey_public')
-    signed_prekey_signature = data.get('signed_prekey_signature')
-    opks = data.get('opks')
+    
+    if not data:
+        return jsonify({'error': 'No JSON data provided'}), 400
+        
+    # Extract the three main objects
+    user_data = data.get('user')
+    keys_data = data.get('keys')
     kek_data = data.get('kek')
-
-    if not all([user_uuid, username, email, identity_key, signed_prekey, kek_data]):
-        return jsonify({'error': 'Missing required fields (uuid, username, email, identity_key, signed_prekey, kek)'}), 400
+    
+    if not all([user_data, keys_data, kek_data]):
+        return jsonify({'error': 'Missing required objects: user, keys, or kek'}), 400
+        
+    # Validate user data
+    user_uuid = user_data.get('uuid')
+    username = user_data.get('username')
+    email = user_data.get('email')
+    salt = user_data.get('salt')
+    
+    if not all([user_uuid, username, email, salt]):
+        return jsonify({'error': 'Missing required user fields: uuid, username, email, salt'}), 400
+        
+    # Validate keys data
+    identity_key = keys_data.get('identity_key_public')
+    signed_prekey = keys_data.get('signed_prekey_public')
+    signed_prekey_signature = keys_data.get('signed_prekey_signature')
+    opks = keys_data.get('opks')
+    
+    if not all([identity_key, signed_prekey, signed_prekey_signature]):
+        return jsonify({'error': 'Missing required keys fields: identity_key_public, signed_prekey_public, signed_prekey_signature'}), 400
 
     # Validate UUID format
     try:
@@ -234,25 +255,32 @@ def register():
         else:
             return jsonify({'error': 'Email already exists'}), 400
 
+    # Validate base64 encoding for all keys and salt
+    try:
+        # Decode user salt
+        salt_bytes = base64.b64decode(salt)
+        
+        # Decode all keys
+        identity_key_bytes = base64.b64decode(identity_key)
+        signed_prekey_bytes = base64.b64decode(signed_prekey)
+        signed_prekey_signature_bytes = base64.b64decode(signed_prekey_signature)
+        
+        # Validate KEK data
+        enc_kek_cyphertext_bytes = base64.b64decode(kek_data['enc_kek_cyphertext'])
+        nonce_bytes = base64.b64decode(kek_data['nonce'])
+        
+    except (ValueError, base64.binascii.Error) as e:
+        return jsonify({'error': f'Invalid base64 encoding: {str(e)}'}), 400
+
     # Create new user with provided UUID
     new_user = User(
         uuid=user_uuid,
         username=username,
         email=email,
-        salt=salt
+        salt=salt_bytes  # Store decoded salt
     )
     db.session.add(new_user)
     db.session.commit()
-
-    try:
-        identity_key_bytes = base64.b64decode(identity_key) if isinstance(identity_key, str) else identity_key
-        signed_prekey_bytes = base64.b64decode(signed_prekey) if isinstance(signed_prekey, str) else signed_prekey
-        signed_prekey_signature_bytes = base64.b64decode(signed_prekey_signature) if isinstance(signed_prekey_signature, str) else signed_prekey_signature
-    except (ValueError, base64.binascii.Error):
-        # Clean up the user if key format is invalid after user creation
-        db.session.delete(new_user)
-        db.session.commit()
-        return jsonify({'error': 'Invalid key format (expected base64 string or bytes)'}), 400
 
     new_user_keys = UserKeys(
         user_id=new_user.id,
@@ -263,7 +291,9 @@ def register():
     )
     db.session.add(new_user_keys)
 
-    # Create KEK
+    # Create KEK with decoded values
+    kek_data['enc_kek_cyphertext'] = enc_kek_cyphertext_bytes
+    kek_data['nonce'] = nonce_bytes
     success, error_message, status_code = create_kek(new_user, kek_data)
     if not success:
         # Clean up user and keys if KEK creation fails
@@ -287,7 +317,7 @@ def get_nonce():
     }
     Returns:
     {
-        "nonce": "generated nonce",
+        "nonce": "base64 encoded nonce",
         "timestamp": "ISO format timestamp"
     }
     """
@@ -303,12 +333,14 @@ def get_nonce():
     if not user:
         return jsonify({'error': 'User not found'}), 404
 
-    nonce = secrets.token_hex(32)
+    # Generate random bytes and encode as base64
+    nonce_bytes = secrets.token_bytes(32)  # 32 bytes = 256 bits
+    nonce = base64.b64encode(nonce_bytes).decode('utf-8')
     timestamp = datetime.now(timezone.utc)
     
     new_nonce = Nonce(
         user_uuid=user_uuid,
-        nonce=nonce,
+        nonce=nonce_bytes,  # Store the raw bytes in the database
         timestamp=timestamp,
         used=False
     )
@@ -316,10 +348,9 @@ def get_nonce():
     db.session.commit()
     
     return jsonify({
-        'nonce': nonce,
+        'nonce': nonce,  # Return base64 encoded nonce
+        'timestamp': timestamp.isoformat()
     }), 200
-
-
 
 @auth_bp.route('/generate-uuid', methods=['GET'])
 def generate_uuid():
@@ -417,11 +448,12 @@ def change_password():
         
         db.session.commit()
         
+        # Encode the stored bytes back to base64 for the response
         return jsonify({
             'uuid': existing_kek.uuid,
             'user_uuid': current_user.uuid,
-            'enc_kek_cyphertext': enc_kek_cyphertext,
-            'nonce': nonce,
+            'enc_kek_cyphertext': base64.b64encode(existing_kek.enc_kek_cyphertext).decode('utf-8'),
+            'nonce': base64.b64encode(existing_kek.nonce).decode('utf-8'),
             'updated_at': existing_kek.updated_at.isoformat()
         }), 200
         
