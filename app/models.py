@@ -10,7 +10,7 @@ class User(db.Model):
     email = db.Column(db.String(120), unique=True, nullable=False)
     salt = db.Column(db.String(24), nullable=False)
     
-    keys = db.relationship('UserKeys', backref='user', uselist=False)
+    keys = db.relationship('UserKeys', backref='user', uselist=False, cascade='all, delete-orphan')
     files_owned = db.relationship('File', backref='owner', lazy=True)
     pac_issued = db.relationship('PAC', backref='issuer', foreign_keys='PAC.issuer_id', lazy='dynamic')
     pac_received = db.relationship('PAC', backref='recipient', foreign_keys='PAC.recipient_id', lazy='dynamic')
