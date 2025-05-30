@@ -83,24 +83,13 @@ class KeyEncryptionKey(db.Model):
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
     encrypted_kek = db.Column(db.LargeBinary, nullable=False)  # The KEK encrypted with master password derived key
     nonce = db.Column(db.LargeBinary, nullable=False)         # Nonce used for encryption
-    tag = db.Column(db.Text, nullable=False)                  # JSON stringified associated data
-    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, nullable=False)
     
     # Relationship with User
     user = db.relationship('User', backref=db.backref('keks', lazy='dynamic'))
     
     def __repr__(self):
         return f'<KeyEncryptionKey {self.uuid}>'
-        
-    @property
-    def associated_data(self):
-        """Get the associated data as a dictionary."""
-        return json.loads(self.tag)
-        
-    @associated_data.setter
-    def associated_data(self, data):
-        """Set the associated data from a dictionary."""
-        self.tag = json.dumps(data)
         
     def to_dict(self):
         """Convert the KEK to a dictionary representation."""
