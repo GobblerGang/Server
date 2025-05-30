@@ -40,7 +40,7 @@ if __name__ == '__main__':
     logging.basicConfig(level=logging.INFO)
     
     # Print available endpoints
-    print_endpoints(app)
+    print_endpoints()
     
     # Use the SSL context from app config if available
     ssl_context = app.config.get('SSL_CONTEXT')
