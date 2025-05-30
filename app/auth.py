@@ -1,5 +1,5 @@
 from flask import Blueprint, request, jsonify, g, current_app
-from .models import db, User, UserKeys, Nonce
+from .models import db, User, UserKeys, Nonce, KeyEncryptionKey
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import padding
 from cryptography.hazmat.primitives.hashes import SHA256
@@ -10,6 +10,7 @@ from datetime import datetime, timedelta, timezone
 import secrets
 import os
 import base64
+import uuid
 
 NONCE_LIFESPAN = int(os.getenv('NONCE_LIFESPAN', 300)) 
 TIMESTAMP_TOLERANCE = int(os.getenv('TIMESTAMP_TOLERANCE', 10)) 
@@ -129,35 +130,124 @@ def verify_signature_authorization(user_uuid, payload, signature):
         current_app.logger.error(f"Error during signature verification: {e}")
         return False
 
+def create_kek(user, kek_data):
+    """Create a Key Encryption Key (KEK) for a user.
+    
+    Args:
+        user: User object
+        kek_data: dict containing:
+            - enc_kek_cyphertext: str (base64 encoded)
+            - nonce: str (base64 encoded)
+            - updated_at: str (ISO format timestamp)
+    
+    Returns:
+        tuple: (success: bool, error_message: str or None, status_code: int or None)
+    """
+    if not all([kek_data.get('enc_kek_cyphertext'), kek_data.get('nonce'), kek_data.get('updated_at')]):
+        return False, 'Missing required KEK fields: enc_kek_cyphertext, nonce, updated_at', 400
+        
+    try:
+        # Parse the timestamp
+        updated_at = datetime.fromisoformat(kek_data['updated_at'].replace('Z', '+00:00'))
+    except ValueError:
+        return False, 'Invalid timestamp format (expected ISO 8601)', 400
+        
+    try:
+        # Decode base64 strings to bytes
+        enc_kek_cyphertext_bytes = base64.b64decode(kek_data['enc_kek_cyphertext'])
+        nonce_bytes = base64.b64decode(kek_data['nonce'])
+    except Exception as e:
+        return False, f'Invalid base64 encoding: {str(e)}', 400
+        
+    try:
+        # Create new KEK record
+        new_kek = KeyEncryptionKey(
+            user=user,
+            enc_kek_cyphertext=enc_kek_cyphertext_bytes,
+            nonce=nonce_bytes,
+            updated_at=updated_at
+        )
+        
+        db.session.add(new_kek)
+        return True, None, None
+        
+    except Exception as e:
+        current_app.logger.error(f"Error creating KEK: {e}")
+        return False, 'Failed to create KEK', 500
+
 @auth_bp.route('/register', methods=['POST'])
 def register():
     """Expected JSON input body structure:
     {
-        "username": str,
-        "email": str,
-        "identity_key_public": str,
-        "signed_prekey_public": str,
-        "signed_prekey_signature": str,
-        "opks": dict (may not use these)
+        "user": {
+            "uuid": str,
+            "username": str,
+            "email": str,
+            "salt": str (base64 encoded)
+        },
+        "keys": {
+            "identity_key_public": str (base64 encoded),
+            "signed_prekey_public": str (base64 encoded),
+            "signed_prekey_signature": str (base64 encoded),
+            "opks": dict
+        },
+        "kek": {
+            "enc_kek_cyphertext": str (base64 encoded),
+            "nonce": str (base64 encoded),
+            "updated_at": str (ISO format timestamp)
+        }
     }
     Returns:
     {
-        "message": "User and keys registered successfully",
-        "user_uuid": "generated UUID"
+        "message": "User, keys, and KEK registered successfully",
+        "user_uuid": "provided UUID"
     }
     """
     data = request.get_json()
-    username = data.get('username')
-    email = data.get('email')
-    salt = data.get('salt') 
-    identity_key = data.get('identity_key_public')
-    signed_prekey = data.get('signed_prekey_public')
-    signed_prekey_signature = data.get('signed_prekey_signature')
-    opks = data.get('opks')
+    
+    if not data:
+        return jsonify({'error': 'No JSON data provided'}), 400
+        
+    # Extract the three main objects
+    user_data = data.get('user')
+    keys_data = data.get('keys')
+    kek_data = data.get('kek')
+    
+    if not all([user_data, keys_data, kek_data]):
+        return jsonify({'error': 'Missing required objects: user, keys, or kek'}), 400
+        
+    # Validate user data
+    user_uuid = user_data.get('uuid')
+    username = user_data.get('username')
+    email = user_data.get('email')
+    salt = user_data.get('salt')
+    
+    if not all([user_uuid, username, email, salt]):
+        return jsonify({'error': 'Missing required user fields: uuid, username, email, salt'}), 400
+        
+    # Validate keys data
+    identity_key = keys_data.get('identity_key_public')
+    signed_prekey = keys_data.get('signed_prekey_public')
+    signed_prekey_signature = keys_data.get('signed_prekey_signature')
+    opks = keys_data.get('opks')
+    
+    if not all([identity_key, signed_prekey, signed_prekey_signature]):
+        return jsonify({'error': 'Missing required keys fields: identity_key_public, signed_prekey_public, signed_prekey_signature'}), 400
 
-    if not username or not email or not identity_key or not signed_prekey:
-        return jsonify({'error': 'Missing required fields (username, email, identity_key, signed_prekey)'}), 400
+    # Validate UUID format
+    try:
+        uuid_obj = uuid.UUID(user_uuid)
+        if str(uuid_obj) != user_uuid:  # Ensure canonical format
+            return jsonify({'error': 'Invalid UUID format'}), 400
+    except ValueError:
+        return jsonify({'error': 'Invalid UUID format'}), 400
 
+    # Check if UUID already exists
+    existing_uuid = User.query.filter_by(uuid=user_uuid).first()
+    if existing_uuid:
+        return jsonify({'error': 'UUID already exists'}), 400
+
+    # Check if username or email exists
     existing_user = User.query.filter((User.username == username) | (User.email == email)).first()
     if existing_user:
         if existing_user.username == username:
@@ -165,20 +255,32 @@ def register():
         else:
             return jsonify({'error': 'Email already exists'}), 400
 
-    # Create new user with UUID
-    new_user = User(username=username, email=email, salt=salt)
+    # Validate base64 encoding for all keys and salt
+    try:
+        # Decode user salt
+        salt_bytes = base64.b64decode(salt)
+        
+        # Decode all keys
+        identity_key_bytes = base64.b64decode(identity_key)
+        signed_prekey_bytes = base64.b64decode(signed_prekey)
+        signed_prekey_signature_bytes = base64.b64decode(signed_prekey_signature)
+        
+        # Validate KEK data
+        enc_kek_cyphertext_bytes = base64.b64decode(kek_data['enc_kek_cyphertext'])
+        nonce_bytes = base64.b64decode(kek_data['nonce'])
+        
+    except (ValueError, base64.binascii.Error) as e:
+        return jsonify({'error': f'Invalid base64 encoding: {str(e)}'}), 400
+
+    # Create new user with provided UUID
+    new_user = User(
+        uuid=user_uuid,
+        username=username,
+        email=email,
+        salt=salt_bytes  # Store decoded salt
+    )
     db.session.add(new_user)
     db.session.commit()
-
-    try:
-        identity_key_bytes = base64.b64decode(identity_key) if isinstance(identity_key, str) else identity_key
-        signed_prekey_bytes = base64.b64decode(signed_prekey) if isinstance(signed_prekey, str) else signed_prekey
-        signed_prekey_signature_bytes = base64.b64decode(signed_prekey_signature) if isinstance(signed_prekey_signature, str) else signed_prekey_signature
-    except (ValueError, base64.binascii.Error):
-        # Clean up the user if key format is invalid after user creation
-        db.session.delete(new_user)
-        db.session.commit()
-        return jsonify({'error': 'Invalid key format (expected base64 string or bytes)'}), 400
 
     new_user_keys = UserKeys(
         user_id=new_user.id,
@@ -188,24 +290,23 @@ def register():
         opks=opks
     )
     db.session.add(new_user_keys)
+
+    # Create KEK with decoded values
+    kek_data['enc_kek_cyphertext'] = enc_kek_cyphertext_bytes
+    kek_data['nonce'] = nonce_bytes
+    success, error_message, status_code = create_kek(new_user, kek_data)
+    if not success:
+        # Clean up user and keys if KEK creation fails
+        db.session.delete(new_user)
+        db.session.commit()
+        return jsonify({'error': error_message}), status_code
+
     db.session.commit()
 
     return jsonify({
-        'message': 'User and keys registered successfully',
+        'message': 'User, keys, and KEK registered successfully',
         'user_uuid': new_user.uuid
     }), 201
-
-@auth_bp.route('/login', methods=['POST'])
-def login():
-    # Authenticate user using signature verification and nonce validation
-    success, user, error_message, status_code = verify_request_auth()
-    if not success:
-        return jsonify({'error': error_message}), status_code
-
-    return jsonify({
-        'message': 'Authentication successful',
-        'user_uuid': user.uuid
-    }), 200
 
 @auth_bp.route('/nonce', methods=['POST'])
 def get_nonce():
@@ -216,7 +317,7 @@ def get_nonce():
     }
     Returns:
     {
-        "nonce": "generated nonce",
+        "nonce": "base64 encoded nonce",
         "timestamp": "ISO format timestamp"
     }
     """
@@ -232,12 +333,14 @@ def get_nonce():
     if not user:
         return jsonify({'error': 'User not found'}), 404
 
-    nonce = secrets.token_hex(32)
+    # Generate random bytes and encode as base64
+    nonce_bytes = secrets.token_bytes(32)  # 32 bytes = 256 bits
+    nonce = base64.b64encode(nonce_bytes).decode('utf-8')
     timestamp = datetime.now(timezone.utc)
     
     new_nonce = Nonce(
         user_uuid=user_uuid,
-        nonce=nonce,
+        nonce=nonce_bytes,  # Store the raw bytes in the database
         timestamp=timestamp,
         used=False
     )
@@ -245,32 +348,175 @@ def get_nonce():
     db.session.commit()
     
     return jsonify({
-        'nonce': nonce,
+        'nonce': nonce,  # Return base64 encoded nonce
+        'timestamp': timestamp.isoformat()
     }), 200
 
-# @auth_bp.route('/user/<username>', methods=['GET'])
-# @login_required
-# def get_user_by_username(username):
-#     """Get user information by username.
-#     """
-#     user = User.query.filter_by(username=username).first()
+@auth_bp.route('/generate-uuid', methods=['GET'])
+def generate_uuid():
+    """Generate a unique UUID for user registration.
     
-#     if not user:
-#         return jsonify({'error': 'User not found'}), 404
+    Returns:
+        JSON response with a unique UUID:
+        {
+            "uuid": str,
+            "message": "UUID generated successfully"
+        }
+    """
+    max_attempts = 5  # Prevent infinite loops
+    attempts = 0
+    
+    while attempts < max_attempts:
+        # Generate new UUID
+        new_uuid = str(uuid.uuid4())
         
-#     if not user.keys:
-#         return jsonify({'error': 'User has no keys registered'}), 404
+        # Check if UUID exists in any relevant tables
+        user_exists = User.query.filter_by(uuid=new_uuid).first()
+        if not user_exists:
+            return jsonify({
+                'uuid': new_uuid,
+                'message': 'UUID generated successfully'
+            }), 200
+            
+        attempts += 1
     
-#     try:
-#         response = {
-#             'uuid': user.uuid,
-#             'username': user.username,
-#             'email': user.email,
-#             'identity_key_public': base64.b64encode(user.keys.identity_key_public).decode('utf-8'),
-#             'signed_prekey_public': base64.b64encode(user.keys.signed_prekey_public).decode('utf-8'),
-#             'signed_prekey_signature': base64.b64encode(user.keys.signed_prekey_signature).decode('utf-8'),
-#             'opks': user.keys.opks
-#         }
-#         return jsonify(response), 200
-#     except Exception as e:
-#         return jsonify({'error': f'Error encoding user keys: {str(e)}'}), 500
+    # If we couldn't generate a unique UUID after max attempts
+    current_app.logger.error("Failed to generate unique UUID after maximum attempts")
+    return jsonify({
+        'error': 'Failed to generate unique UUID'
+    }), 500
+
+@auth_bp.route('/change-password', methods=['PUT'])
+@login_required
+def change_password():
+    """Update user's Key Encryption Key (KEK) after password change.
+    
+    Expected JSON payload:
+    {
+        "enc_kek_cyphertext": str (base64 encoded),
+        "nonce": str (base64 encoded),
+        "updated_at": str (ISO format timestamp)
+    }
+    
+    Returns:
+        JSON response with updated KEK information:
+        {
+            "uuid": str,
+            "user_uuid": str,
+            "enc_kek_cyphertext": str (base64 encoded),
+            "nonce": str (base64 encoded),
+            "updated_at": str (ISO format)
+        }
+    """
+    current_user = g.user
+    data = request.get_json()
+    
+    if not data:
+        return jsonify({'error': 'No JSON data provided'}), 400
+        
+    # Extract and validate required fields
+    enc_kek_cyphertext = data.get('enc_kek_cyphertext')
+    nonce = data.get('nonce')
+    updated_at_str = data.get('updated_at')
+    
+    if not all([enc_kek_cyphertext, nonce, updated_at_str]):
+        return jsonify({'error': 'Missing required fields: enc_kek_cyphertext, nonce, updated_at'}), 400
+        
+    try:
+        # Parse the timestamp
+        updated_at = datetime.fromisoformat(updated_at_str.replace('Z', '+00:00'))
+    except ValueError:
+        return jsonify({'error': 'Invalid timestamp format (expected ISO 8601)'}), 400
+        
+    try:
+        # Decode base64 strings to bytes
+        enc_kek_cyphertext_bytes = base64.b64decode(enc_kek_cyphertext)
+        nonce_bytes = base64.b64decode(nonce)
+    except Exception as e:
+        return jsonify({'error': f'Invalid base64 encoding: {str(e)}'}), 400
+        
+    try:
+        # Find user's existing KEK
+        existing_kek = KeyEncryptionKey.query.filter_by(user_id=current_user.id).first()
+        if not existing_kek:
+            return jsonify({'error': 'No KEK found for user'}), 404
+            
+        # Update KEK with new values
+        existing_kek.enc_kek_cyphertext = enc_kek_cyphertext_bytes
+        existing_kek.nonce = nonce_bytes
+        existing_kek.updated_at = updated_at
+        
+        db.session.commit()
+        
+        # Encode the stored bytes back to base64 for the response
+        return jsonify({
+            'uuid': existing_kek.uuid,
+            'user_uuid': current_user.uuid,
+            'enc_kek_cyphertext': base64.b64encode(existing_kek.enc_kek_cyphertext).decode('utf-8'),
+            'nonce': base64.b64encode(existing_kek.nonce).decode('utf-8'),
+            'updated_at': existing_kek.updated_at.isoformat()
+        }), 200
+        
+    except Exception as e:
+        db.session.rollback()
+        current_app.logger.error(f"Error updating KEK: {e}")
+        return jsonify({'error': 'Failed to update KEK'}), 500
+
+@auth_bp.route('/kek', methods=['GET'])
+def get_kek():
+    """Get the user's Key Encryption Key (KEK).
+    
+    Expected JSON payload:
+    {
+        "user_uuid": str
+    }
+    
+    Returns:
+        JSON response with KEK information:
+        {
+            "uuid": str,
+            "user_uuid": str,
+            "enc_kek_cyphertext": str (base64 encoded),
+            "nonce": str (base64 encoded),
+            "updated_at": str (ISO format)
+        }
+    """
+    data = request.get_json()
+    
+    if not data:
+        return jsonify({'error': 'No JSON data provided'}), 400
+        
+    user_uuid = data.get('user_uuid')
+    if not user_uuid:
+        return jsonify({'error': 'Missing required field: user_uuid'}), 400
+        
+    try:
+        # Validate UUID format
+        uuid_obj = uuid.UUID(user_uuid)
+        if str(uuid_obj) != user_uuid:  # Ensure canonical format
+            return jsonify({'error': 'Invalid UUID format'}), 400
+    except ValueError:
+        return jsonify({'error': 'Invalid UUID format'}), 400
+    
+    try:
+        # Find user and their KEK
+        user = User.query.filter_by(uuid=user_uuid).first()
+        if not user:
+            return jsonify({'error': 'User not found'}), 404
+            
+        kek = KeyEncryptionKey.query.filter_by(user_id=user.id).first()
+        if not kek:
+            return jsonify({'error': 'No KEK found for user'}), 404
+            
+        return jsonify({
+            'uuid': kek.uuid,
+            'user_uuid': user.uuid,
+            'enc_kek_cyphertext': base64.b64encode(kek.enc_kek_cyphertext).decode('utf-8'),
+            'nonce': base64.b64encode(kek.nonce).decode('utf-8'),
+            'updated_at': kek.updated_at.isoformat()
+        }), 200
+        
+    except Exception as e:
+        current_app.logger.error(f"Error retrieving KEK: {e}")
+        return jsonify({'error': 'Failed to retrieve KEK'}), 500
+

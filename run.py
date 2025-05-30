@@ -5,16 +5,17 @@ import logging
 config_name = os.environ.get('FLASK_CONFIG') or 'default'
 app = create_app(config_name)
 
-def print_endpoints(app):
+def print_endpoints():
     """Print all available endpoints when server starts."""
     print("\n=== Available Endpoints ===")
     
     # Auth endpoints
     print("\nAuthentication Endpoints (/api):")
     print("  POST /register     - Register new user")
-    print("  POST /login        - User login")
-    print("  POST /logout       - User logout")
     print("  GET  /nonce        - Get authentication nonce")
+    print("  GET  /generate-uuid - Generate unique UUID for registration")
+    print("  PUT  /change-password - Update KEK after password change")
+    print("  GET  /kek          - Get user's Key Encryption Key")
     
     # File endpoints
     print("\nFile Endpoints (/api/files):")
@@ -25,6 +26,7 @@ def print_endpoints(app):
     print("  DELETE /delete/<uuid>       - Delete file")
     print("  GET    /owned               - List owned files")
     print("  GET    /pacs                - List PACs (sent and received)")
+    print("  GET    /info/<uuid>         - Get detailed file information")
     
     # User endpoints
     print("\nUser Endpoints (/api/users):")

@@ -1,10 +1,12 @@
 from . import db
 from datetime import datetime
 import uuid
+import json
+import base64
 
 class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    uuid = db.Column(db.String(36), unique=True, nullable=False, default=lambda: str(uuid.uuid4()))
+    uuid = db.Column(db.String(36), unique=True, nullable=False)
     username = db.Column(db.String(80), unique=True, nullable=False)
     email = db.Column(db.String(120), unique=True, nullable=False)
     salt = db.Column(db.String(64), nullable=False)
@@ -73,3 +75,29 @@ class Nonce(db.Model):
 
     def __repr__(self):
         return f'<Nonce {self.nonce} for user {self.user_uuid}>'
+
+class KeyEncryptionKey(db.Model):
+    __tablename__ = 'key_encryption_keys'
+    id = db.Column(db.Integer, primary_key=True)
+    uuid = db.Column(db.String(36), unique=True, nullable=False, default=lambda: str(uuid.uuid4()))
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    enc_kek_cyphertext = db.Column(db.LargeBinary, nullable=False)  # The KEK encrypted with master password derived key
+    nonce = db.Column(db.LargeBinary, nullable=False)         # Nonce used for encryption
+    updated_at = db.Column(db.DateTime, nullable=False)
+    
+    # Relationship with User
+    user = db.relationship('User', backref=db.backref('keks', lazy='dynamic'))
+    
+    def __repr__(self):
+        return f'<KeyEncryptionKey {self.uuid}>'
+        
+    def to_dict(self):
+        """Convert the KEK to a dictionary representation."""
+        return {
+            'uuid': self.uuid,
+            'user_uuid': self.user.uuid,
+            'enc_kek_cyphertext': base64.b64encode(self.enc_kek_cyphertext).decode('utf-8'),
+            'nonce': base64.b64encode(self.nonce).decode('utf-8'),
+            'associated_data': self.associated_data,
+            'created_at': self.created_at.isoformat()
+        }

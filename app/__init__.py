@@ -93,7 +93,10 @@ def create_app(config_name='default'):
                     'register': '/api/register',
                     'login': '/api/login',
                     'logout': '/api/logout',
-                    'nonce': '/api/nonce'
+                    'nonce': '/api/nonce',
+                    'generate_uuid': '/api/generate-uuid',
+                    'change_password': '/api/change-password',
+                    'get_kek': '/api/kek'
                 },
                 'files': {
                     'upload': '/api/files/upload',
@@ -102,7 +105,8 @@ def create_app(config_name='default'):
                     'revoke': '/api/files/revoke/<pac_id>',
                     'delete': '/api/files/delete/<file_uuid>',
                     'owned': '/api/files/owned',
-                    'pacs': '/api/files/pacs'
+                    'pacs': '/api/files/pacs',
+                    'info': '/api/files/info/<file_uuid>'
                 },
                 'users': {
                     'get_by_username': '/api/users/<username>',
