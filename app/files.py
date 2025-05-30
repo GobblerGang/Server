@@ -110,7 +110,7 @@ def upload_file():
 @files_bp.route('/download/<file_uuid>', methods=['GET'])
 @login_required
 def download_file(file_uuid):
-    current_user_uuid = g.user
+    current_user = g.user
 
     # Find the file and verify access
     file_to_download = File.query.filter_by(uuid=file_uuid).first()
@@ -119,10 +119,10 @@ def download_file(file_uuid):
         return jsonify({'error': 'File not found'}), 404
         
     # Check if user is owner or has valid PAC
-    is_owner = (file_to_download.owner == current_user_uuid)
+    is_owner = (file_to_download.owner == current_user)
     has_valid_pac = PAC.query.filter_by(
         file=file_to_download,
-        recipient=current_user_uuid,
+        recipient=current_user,
         revoked=False
     ).first() is not None
 
