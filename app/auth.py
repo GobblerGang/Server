@@ -152,6 +152,7 @@ def register():
     salt = data.get('salt') 
     identity_key = data.get('identity_key_public')
     signed_prekey = data.get('signed_prekey_public')
+    signed_prekey_signature = data.get('signed_prekey_signature')
     opks = data.get('opks')
 
     if not username or not email or not identity_key or not signed_prekey:
@@ -172,6 +173,7 @@ def register():
     try:
         identity_key_bytes = base64.b64decode(identity_key) if isinstance(identity_key, str) else identity_key
         signed_prekey_bytes = base64.b64decode(signed_prekey) if isinstance(signed_prekey, str) else signed_prekey
+        signed_prekey_signature_bytes = base64.b64decode(signed_prekey_signature) if isinstance(signed_prekey_signature, str) else signed_prekey_signature
     except (ValueError, base64.binascii.Error):
         # Clean up the user if key format is invalid after user creation
         db.session.delete(new_user)
@@ -182,6 +184,7 @@ def register():
         user_id=new_user.id,
         identity_key_public=identity_key_bytes,
         signed_prekey_public=signed_prekey_bytes,
+        signed_prekey_signature=signed_prekey_signature_bytes,
         opks=opks
     )
     db.session.add(new_user_keys)
