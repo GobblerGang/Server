@@ -403,16 +403,12 @@ def change_password():
     # Extract and validate required fields
     enc_kek_cyphertext = data.get('enc_kek_cyphertext')
     nonce = data.get('nonce')
-    updated_at_str = data.get('updated_at')
+    updated_at = data.get('updated_at')
     
-    if not all([enc_kek_cyphertext, nonce, updated_at_str]):
+    if not all([enc_kek_cyphertext, nonce, updated_at]):
         return jsonify({'error': 'Missing required fields: enc_kek_cyphertext, nonce, updated_at'}), 400
         
-    try:
-        # Parse the timestamp
-        updated_at = datetime.fromisoformat(updated_at_str.replace('Z', '+00:00'))
-    except ValueError:
-        return jsonify({'error': 'Invalid timestamp format (expected ISO 8601)'}), 400
+    
         
     try:
         # Decode base64 strings to bytes
@@ -440,7 +436,7 @@ def change_password():
             'user_uuid': current_user.uuid,
             'enc_kek_cyphertext': base64.b64encode(existing_kek.enc_kek_cyphertext).decode('utf-8'),
             'nonce': base64.b64encode(existing_kek.nonce).decode('utf-8'),
-            'updated_at': existing_kek.updated_at.isoformat()
+            'updated_at': existing_kek.updated_at
         }), 200
         
     except Exception as e:
@@ -494,7 +490,7 @@ def get_kek(user_uuid):
             'user_uuid': user.uuid,
             'enc_kek_cyphertext': base64.b64encode(kek.enc_kek_cyphertext).decode('utf-8'),
             'nonce': base64.b64encode(kek.nonce).decode('utf-8'),
-            'updated_at': kek.updated_at.isoformat()
+            'updated_at': kek.updated_at
         }), 200
         
     except Exception as e:
