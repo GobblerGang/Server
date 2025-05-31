@@ -29,7 +29,7 @@ def verify_request_auth():
     # Get authentication data from headers
     user_uuid = request.headers.get('X-User-UUID')
     nonce_b64 = request.headers.get('X-Nonce')
-    signature_hex = request.headers.get('X-Signature')
+    signature_b64 = request.headers.get('X-Signature')
 
     try:
         nonce = base64.b64decode(nonce_b64)
@@ -37,7 +37,7 @@ def verify_request_auth():
         return False, None, 'Authentication failed: Invalid nonce encoding', 401
 
 
-    if not user_uuid or not nonce or not signature_hex:
+    if not user_uuid or not nonce or not signature_b64:
         return False, None, 'Authentication required: Missing X-User-UUID, X-Nonce, or X-Signature headers', 401
 
     # Get the request payload for signature verification
@@ -67,8 +67,8 @@ def verify_request_auth():
 
     # Verify the signature
     try:
-        signature = bytes.fromhex(signature_hex)
-    except ValueError:
+        signature = base64.b64decode(signature_b64)
+    except (ValueError, base64.binascii.Error):
         # Mark nonce as used and reject if signature format is invalid
         db_nonce.used = True
         db.session.commit()
