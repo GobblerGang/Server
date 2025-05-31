@@ -294,8 +294,8 @@ def register():
         'user_uuid': new_user.uuid
     }), 201
 
-@auth_bp.route('/nonce', methods=['POST'])
-def get_nonce():
+@auth_bp.route('/nonce/<uuid>', methods=['GET'])
+def get_nonce(user_uuid):
     """Generate a new nonce for a user.
     Expected JSON input:
     {
@@ -307,13 +307,13 @@ def get_nonce():
         "timestamp": "ISO format timestamp"
     }
     """
-    data = request.get_json()
-    if not data:
-        return jsonify({'error': 'Request body missing'}), 400
+    # data = request.get_json()
+    # if not data:
+    #     return jsonify({'error': 'Request body missing'}), 400
 
-    user_uuid = data.get('user_uuid')
-    if not user_uuid:
-        return jsonify({'error': 'User UUID required'}), 400
+    # user_uuid = data.get('user_uuid')
+    # if not user_uuid:
+    #     return jsonify({'error': 'User UUID required'}), 400
 
     user = User.query.filter_by(uuid=user_uuid).first()
     if not user:
