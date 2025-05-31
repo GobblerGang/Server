@@ -294,7 +294,7 @@ def register():
         'user_uuid': new_user.uuid
     }), 201
 
-@auth_bp.route('/nonce/<uuid>', methods=['GET'])
+@auth_bp.route('/nonce/<user_uuid>', methods=['GET'])
 def get_nonce(user_uuid):
     """Generate a new nonce for a user.
     Expected JSON input:
