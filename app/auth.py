@@ -72,8 +72,9 @@ def verify_request_auth():
         db.session.commit()
         return False, None, 'Authentication failed: Invalid signature format', 401
 
+    message= payload + nonce_b64.encode()  
     # Verify the signature using the request payload
-    if not verify_signature_authorization(user_uuid, payload, signature):
+    if not verify_signature_authorization(user_uuid=user_uuid, message=message, signature=signature):
         # Mark nonce as used and reject
         db_nonce.used = True
         db.session.commit()
@@ -102,7 +103,7 @@ def login_required(f):
     decorated_function.__name__ = f.__name__
     return decorated_function
 
-def verify_signature_authorization(user_uuid, payload, signature):
+def verify_signature_authorization(user_uuid, message, signature):
     """Verify the signature of a request payload.
     Args:
         user_uuid: The UUID of the user
@@ -117,7 +118,7 @@ def verify_signature_authorization(user_uuid, payload, signature):
 
     try:
         public_key = ed25519.Ed25519PublicKey.from_public_bytes(user.keys.identity_key_public)
-        public_key.verify(signature, payload)
+        public_key.verify(signature, message)
         return True
     except InvalidSignature:
         return False
