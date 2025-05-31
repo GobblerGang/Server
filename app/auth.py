@@ -156,7 +156,7 @@ def create_kek(user, kek_data):
     # except Exception as e:
     #     return False, f'Invalid base64 encoding: {str(e)}', 400
         
-    nonce_bytes = base64.b64encode(kek_data['nonce'])
+    nonce_bytes = base64.b64decode(kek_data['nonce'])
     enc_kek_cyphertext_bytes = base64.b64decode(kek_data['enc_kek_cyphertext'])
     try:
         # Create new KEK record
