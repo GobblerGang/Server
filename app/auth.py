@@ -28,8 +28,14 @@ def verify_request_auth():
     
     # Get authentication data from headers
     user_uuid = request.headers.get('X-User-UUID')
-    nonce = request.headers.get('X-Nonce')
+    nonce_b64 = request.headers.get('X-Nonce')
     signature_hex = request.headers.get('X-Signature')
+
+    try:
+        nonce = base64.b64decode(nonce_b64)
+    except Exception:
+        return False, None, 'Authentication failed: Invalid nonce encoding', 401
+
 
     if not user_uuid or not nonce or not signature_hex:
         return False, None, 'Authentication required: Missing X-User-UUID, X-Nonce, or X-Signature headers', 401
@@ -407,8 +413,6 @@ def change_password():
     
     if not all([enc_kek_cyphertext, nonce, updated_at]):
         return jsonify({'error': 'Missing required fields: enc_kek_cyphertext, nonce, updated_at'}), 400
-        
-    
         
     try:
         # Decode base64 strings to bytes
