@@ -59,7 +59,7 @@ def verify_request_auth():
 
     time_difference = abs((current_time_utc - nonce_timestamp).total_seconds())
 
-    if time_difference > TIMESTAMP_TOLERANCE or (current_time_utc - db_nonce.timestamp).total_seconds() > NONCE_LIFESPAN + TIMESTAMP_TOLERANCE:
+    if time_difference > TIMESTAMP_TOLERANCE or time_difference > NONCE_LIFESPAN + TIMESTAMP_TOLERANCE:
         # Mark nonce as used if it's outside the freshness window or overall lifespan
         db_nonce.used = True
         db.session.commit()
