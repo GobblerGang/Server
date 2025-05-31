@@ -64,7 +64,7 @@ class Nonce(db.Model):
     __tablename__ = 'nonces'
     id = db.Column(db.Integer, primary_key=True)
     user_uuid = db.Column(db.String(36), db.ForeignKey('user.uuid'), nullable=False)
-    nonce = db.Column(db.String(64), nullable=False)
+    nonce = db.Column(db.LargeBinary, nullable=False)
     timestamp = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
     used = db.Column(db.Boolean, default=False)
 
