@@ -82,7 +82,7 @@ class KeyEncryptionKey(db.Model):
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
     enc_kek_cyphertext = db.Column(db.LargeBinary, nullable=False)  # The KEK encrypted with master password derived key
     nonce = db.Column(db.LargeBinary, nullable=False)         # Nonce used for encryption
-    updated_at = db.Column(db.String(255), nullable=False)
+    updated_at = db.Column(db.String(255), nullable=False) # Needs to be a string to ensure no truncation issues
     
     # Relationship with User
     user = db.relationship('User', backref=db.backref('keks', lazy='dynamic'))
