@@ -1,10 +1,8 @@
 from flask import Blueprint, request, jsonify, g, current_app
 from .models import db, User, UserKeys, Nonce, KeyEncryptionKey
-from cryptography.hazmat.primitives import serialization
-from cryptography.hazmat.primitives.asymmetric import padding
-from cryptography.hazmat.primitives.hashes import SHA256
 from cryptography.exceptions import InvalidSignature
 from datetime import datetime, timedelta, timezone
+from cryptography.hazmat.primitives.asymmetric import ed25519
 import secrets
 import os
 import base64
@@ -118,20 +116,8 @@ def verify_signature_authorization(user_uuid, payload, signature):
         return False
 
     try:
-        public_key = serialization.load_public_key(
-            user.keys.identity_key_public,
-            backend=None
-        )
-        
-        public_key.verify(
-            signature,
-            payload,
-            padding.PSS(
-                mgf=padding.MGF1(SHA256()),
-                salt_length=padding.PSS.MAX_LENGTH
-            ),
-            SHA256()
-        )
+        public_key = ed25519.Ed25519PublicKey.from_public_bytes(user.keys.identity_key_public)
+        public_key.verify(signature, payload)
         return True
     except InvalidSignature:
         return False
