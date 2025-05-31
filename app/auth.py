@@ -144,18 +144,8 @@ def create_kek(user, kek_data):
     if not all([kek_data.get('enc_kek_cyphertext'), kek_data.get('nonce'), kek_data.get('updated_at')]):
         return False, 'Missing required KEK fields: enc_kek_cyphertext, nonce, updated_at', 400
         
-    try:
-        # Parse the timestamp
-        updated_at = datetime.fromisoformat(kek_data['updated_at'].replace('Z', '+00:00'))
-    except ValueError:
-        return False, 'Invalid timestamp format (expected ISO 8601)', 400
-    
-    
-    # try:
-    #     # Decode base64 strings to bytes
-    # except Exception as e:
-    #     return False, f'Invalid base64 encoding: {str(e)}', 400
-        
+    updated_at = kek_data['updated_at']
+     
     nonce_bytes = base64.b64decode(kek_data['nonce'])
     enc_kek_cyphertext_bytes = base64.b64decode(kek_data['enc_kek_cyphertext'])
     try:
