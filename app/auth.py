@@ -52,7 +52,12 @@ def verify_request_auth():
 
     # Check if nonce is within the acceptable freshness window
     current_time_utc = datetime.now(timezone.utc)
-    time_difference = abs((current_time_utc - db_nonce.timestamp).total_seconds())
+    nonce_timestamp = db_nonce.timestamp
+
+    if nonce_timestamp.tzinfo is None:
+        nonce_timestamp = nonce_timestamp.replace(tzinfo=timezone.utc)
+
+    time_difference = abs((current_time_utc - nonce_timestamp).total_seconds())
 
     if time_difference > TIMESTAMP_TOLERANCE or (current_time_utc - db_nonce.timestamp).total_seconds() > NONCE_LIFESPAN + TIMESTAMP_TOLERANCE:
         # Mark nonce as used if it's outside the freshness window or overall lifespan
