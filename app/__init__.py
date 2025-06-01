@@ -9,11 +9,14 @@ import uuid
 import time # Import time for nonce timestamping
 from urllib.parse import quote_plus # Import quote_plus for URL encoding
 from flask_apscheduler import APScheduler # Import APScheduler
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
 
 load_dotenv()
 
 db = SQLAlchemy()
 scheduler = APScheduler() # Initialize scheduler
+limiter = Limiter(key_func=get_remote_address)
 
 # In-memory storage for used nonces (for development only)
 # In production, use a database or distributed cache
@@ -25,6 +28,9 @@ def create_app(config_name='default'):
     app = Flask(__name__)
     CORS(app)
 
+    # Initialize rate limiter
+    limiter.init_app(app)
+    
     # Configuration from environment variables
     app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY') or 'a-very-hard-to-guess-string'
     
