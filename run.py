@@ -46,12 +46,12 @@ if __name__ == '__main__':
     ssl_context = app.config.get('SSL_CONTEXT')
     
     # For development testing with SSL
-    if ssl_context and config_name == 'development':
-         print("\n=== Secure File Sharing Server (Development with SSL) ===")
-         app.run(host='0.0.0.0', port=4433, ssl_context=ssl_context, debug=True)
-    else:
-        # For development testing without SSL or production
-        print(f"\n=== File Sharing Server ({config_name.capitalize()}) ===")
-        app.run(host='0.0.0.0', port=6969, debug=app.config['DEBUG']) 
+    print("\n=== Secure File Sharing Server (Development with SSL) ===")
+    # if ssl_context and config_name == 'development':
+    app.run(host='0.0.0.0', port=6969, ssl_context=ssl_context, debug=True)
+    # else:
+    #     # For development testing without SSL or production
+    #     print(f"\n=== File Sharing Server ({config_name.capitalize()}) ===")
+    #     app.run(host='0.0.0.0', port=6969, debug=app.config['DEBUG']) 
 
 
