@@ -204,13 +204,14 @@ def share_file():
         "encrypted_file_key": str (base64 encoded),
         "signature": str (base64 encoded),
         "sender_ephemeral_public": str (base64 encoded),
-        "k_file_nonce": str (base64 encoded)
+        "k_file_nonce": str (base64 encoded),
     }
     
     Returns:
         JSON response with success message:
         {
-            "message": str
+            "success": bool,
+            "error": str (if any)
         }
         
     Error Responses:
@@ -239,6 +240,7 @@ def share_file():
     sender_ephemeral_public = data.get('sender_ephemeral_public')
     k_file_nonce = data.get('k_file_nonce')
 
+
     # Validate all required fields are present
     required_fields = {
         'recipient_uuid': recipient_uuid,
@@ -246,7 +248,7 @@ def share_file():
         'encrypted_file_key': encrypted_file_key,
         'signature': signature,
         'sender_ephemeral_public': sender_ephemeral_public,
-        'k_file_nonce': k_file_nonce
+        'k_file_nonce': k_file_nonce,
     }
 
     missing_fields = [field for field, value in required_fields.items() if not value]
@@ -297,7 +299,7 @@ def share_file():
     db.session.commit()
     
     return jsonify({
-        'message': 'File shared successfully',
+        'success': True,
     }), 201
 
 @files_bp.route('/revoke/<pac_id>', methods=['POST'])
@@ -490,7 +492,7 @@ def get_owned_files():
         {
             "files": [
                 {
-                    "uuid": str,
+                    "file_uuid": str,
                     "filename": str,
                     "mime_type": str
                 }
@@ -505,7 +507,7 @@ def get_owned_files():
     files_list = []
     for file in owned_files:
         files_list.append({
-            'uuid': file.uuid,
+            'file_uuid': file.uuid,
             'filename': file.filename,
             'mime_type': file.mime_type
         })
@@ -522,7 +524,7 @@ def get_file_info(file_uuid):
     Returns:
         JSON response with file information:
         {
-            "uuid": str,
+            "file_uuid": str,
             "filename": str,
             "mime_type": str,
             "file_nonce": str (base64 encoded),
