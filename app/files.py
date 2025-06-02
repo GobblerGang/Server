@@ -126,7 +126,7 @@ def upload_file():
         return jsonify({'error': f'Failed to save encrypted file: {str(e)}'}), 500
     
     return jsonify({
-        'message': 'File uploaded successfully',
+        'success': True,
         'file_uuid': new_file.uuid
     }), 201
 
