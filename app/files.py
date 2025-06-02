@@ -90,10 +90,10 @@ def upload_file():
     if missing_fields:
         return jsonify({'error': f'Missing required fields: {", ".join(missing_fields)}'}), 400
 
-    # Check if user already has a file with this name
-    existing_filename = File.query.filter_by(owner=current_user, filename=filename).first()
-    if existing_filename:
-        return jsonify({'error': f'File with name \'{filename}\' already exists for this user'}), 400
+    # # Check if user already has a file with this name
+    # existing_filename = File.query.filter_by(owner=current_user, filename=filename).first()
+    # if existing_filename:
+    #     return jsonify({'error': f'File with name \'{filename}\' already exists for this user'}), 400
 
     try:
         # Decode base64 strings to bytes
