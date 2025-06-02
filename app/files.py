@@ -530,11 +530,7 @@ def get_file_info(file_uuid):
             "file_nonce": str (base64 encoded),
             "k_file_encrypted": str (base64 encoded),
             "k_file_nonce": str (base64 encoded),
-            "owner": {
-                "uuid": str,
-                "username": str,
-                "email": str
-            }
+            "owner_uuid": str,
         }
     """
     current_user = g.user
@@ -556,11 +552,7 @@ def get_file_info(file_uuid):
             'file_nonce': base64.b64encode(file.file_nonce).decode('utf-8'),
             'k_file_encrypted': base64.b64encode(file.k_file_encrypted).decode('utf-8'),
             'k_file_nonce': base64.b64encode(file.k_file_nonce).decode('utf-8'),
-            'owner': {
-                'uuid': file.owner.uuid,
-                'username': file.owner.username,
-                'email': file.owner.email
-            }
+            'owner_uuid': file.owner.uuid,
         }
         return jsonify(response), 200
     except Exception as e:
