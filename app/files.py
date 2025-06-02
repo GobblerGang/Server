@@ -445,14 +445,11 @@ def get_user_pacs(user_id: int, is_recipient: bool) -> list:
             'signature': base64.b64encode(pac.signature).decode('utf-8')
         }
         
-        # Add user info based on whether this is a sent or received PAC
-        if is_recipient:
-            pac_data.update({
+        pac_data.update({
                 'issuer_uuid': pac.issuer.uuid,
                 'issuer_username': pac.issuer.username
             })
-        else:
-            pac_data.update({
+        pac_data.update({
                 'recipient_uuid': pac.recipient.uuid,
                 'recipient_username': pac.recipient.username
             })
