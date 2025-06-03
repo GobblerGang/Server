@@ -307,49 +307,120 @@ def share_file():
         'success': True,
     }), 201
 
-@files_bp.route('/revoke/<pac_id>', methods=['POST'])
+@files_bp.route('/reissue-pacs', methods=['PUT'])
 @login_required
-def revoke_access(pac_id):
-    """Revoke a Pre-Authorized Access Certificate (PAC) for a shared file.
+def reissue_pacs():
+    """Reissue multiple PACs while removing one specific PAC.
     
-    URL Parameters:
-        pac_id: int - The ID of the PAC to revoke
-        
+    Expected JSON payload:
+    {
+        "pac_to_remove": int,  # ID of the PAC to remove
+        "pacs_to_reissue": [
+            {
+                "pac_id": int,  # ID of existing PAC to update
+                "valid_until": str (ISO format timestamp, optional),
+                "encrypted_file_key": str (base64 encoded),
+                "signature": str (base64 encoded),
+                "sender_ephemeral_public": str (base64 encoded),
+                "k_file_nonce": str (base64 encoded)
+            },
+            ...
+        ]
+    }
+    
     Returns:
         JSON response with success message:
         {
+            "success": bool,
             "message": str
         }
         
     Error Responses:
-        404: PAC not found or user is not the issuer
-        400: PAC is already revoked
-        500: Failed to revoke access
-        
-    Note:
-        - Only the original issuer of the PAC can revoke it
-        - Revocation is permanent and cannot be undone
-        - The file itself is not deleted, only the access is revoked
+        400: Missing required fields or invalid data
+        400: Invalid base64 encoding
+        400: Invalid date format
+        404: PAC to remove not found or user is not the issuer
+        404: PAC to update not found or user is not the issuer
+        500: Failed to reissue PACs
     """
-    current_user_uuid = g.user
-
-    # Find the PAC and verify the issuer is the current user
-    pac_to_revoke = PAC.query.filter_by(id=pac_id, issuer=current_user_uuid).first()
+    current_user = g.user
+    data = request.get_json()
     
-    if not pac_to_revoke:
-        return jsonify({'error': 'PAC not found or you are not the issuer'}), 404
-
-    if pac_to_revoke.revoked:
-        return jsonify({'error': 'PAC is already revoked'}), 400
-
+    if not data:
+        return jsonify({'error': 'No JSON data provided'}), 400
+        
+    # Extract and validate required fields
+    pac_to_remove_id = data.get('pac_to_remove')
+    pacs_to_reissue = data.get('pacs_to_reissue')
+    
+    if not pac_to_remove_id or not pacs_to_reissue:
+        return jsonify({'error': 'Missing required fields: pac_to_remove or pacs_to_reissue'}), 400
+        
+    # Find the PAC to remove and verify the issuer is the current user
+    pac_to_remove = PAC.query.filter_by(id=pac_to_remove_id, issuer=current_user).first()
+    if not pac_to_remove:
+        return jsonify({'error': 'PAC to remove not found or you are not the issuer'}), 404
+        
     try:
-        pac_to_revoke.revoked = True
+        # Start a transaction
+        for pac_data in pacs_to_reissue:
+            # Validate required fields for each PAC
+            required_fields = {
+                'pac_id': pac_data.get('pac_id'),
+                'encrypted_file_key': pac_data.get('encrypted_file_key'),
+                'signature': pac_data.get('signature'),
+                'sender_ephemeral_public': pac_data.get('sender_ephemeral_public'),
+                'k_file_nonce': pac_data.get('k_file_nonce')
+            }
+            
+            missing_fields = [field for field, value in required_fields.items() if not value]
+            if missing_fields:
+                return jsonify({'error': f'Missing required fields for PAC: {", ".join(missing_fields)}'}), 400
+                
+            # Find existing PAC and verify ownership
+            existing_pac = PAC.query.filter_by(id=pac_data['pac_id'], issuer=current_user).first()
+            if not existing_pac:
+                return jsonify({'error': f'PAC to update not found or you are not the issuer: {pac_data["pac_id"]}'}), 404
+                
+            try:
+                # Convert base64 strings to bytes
+                encrypted_file_key_bytes = base64.b64decode(pac_data['encrypted_file_key'])
+                sender_ephemeral_public_bytes = base64.b64decode(pac_data['sender_ephemeral_public'])
+                signature_bytes = base64.b64decode(pac_data['signature'])
+                k_file_nonce_bytes = base64.b64decode(pac_data['k_file_nonce'])
+            except ValueError:
+                return jsonify({'error': 'Invalid base64 encoding for key, signature, or nonce'}), 400
+                
+            valid_until_dt = None
+            if pac_data.get('valid_until'):
+                try:
+                    valid_until_dt = datetime.fromisoformat(pac_data['valid_until'])
+                except ValueError:
+                    return jsonify({'error': 'Invalid date format for valid_until (expected ISO 8601)'}), 400
+                    
+            # Update existing PAC
+            existing_pac.encrypted_file_key = encrypted_file_key_bytes
+            existing_pac.k_file_nonce = k_file_nonce_bytes
+            existing_pac.sender_ephemeral_public_key = sender_ephemeral_public_bytes
+            existing_pac.valid_until = valid_until_dt
+            existing_pac.revoked = False
+            existing_pac.signature = signature_bytes
+            
+        # Delete the PAC to remove
+        db.session.delete(pac_to_remove)
+        
+        # Commit all changes
         db.session.commit()
-        return jsonify({'message': 'Access revoked successfully'}), 200
+        
+        return jsonify({
+            'success': True,
+            'message': 'PACs reissued successfully'
+        }), 200
+        
     except Exception as e:
         db.session.rollback()
-        current_app.logger.error(f"Error revoking PAC: {e}")
-        return jsonify({'error': 'Failed to revoke access'}), 500
+        current_app.logger.error(f"Error reissuing PACs: {e}")
+        return jsonify({'error': 'Failed to reissue PACs'}), 500
 
 @files_bp.route('/delete/<file_uuid>', methods=['DELETE'])
 @login_required
