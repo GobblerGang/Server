@@ -21,8 +21,9 @@ class User(db.Model):
 class UserKeys(db.Model):
     __tablename__ = 'user_keys'
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), primary_key=True)
-    identity_key_public = db.Column(db.LargeBinary, nullable=False)         # Ed25519 public key
-    signed_prekey_public = db.Column(db.LargeBinary, nullable=False)        # X25519 public key
+    ed25519_identity_key_public = db.Column(db.LargeBinary, nullable=False)
+    x25519_identity_key_public = db.Column(db.LargeBinary, nullable=False) 
+    signed_prekey_public = db.Column(db.LargeBinary, nullable=False)        
     signed_prekey_signature = db.Column(db.LargeBinary, nullable=False)     # Signature by identity key
     opks = db.Column(db.JSON, nullable=True)                                # Array of one-time prekeys (public)
 

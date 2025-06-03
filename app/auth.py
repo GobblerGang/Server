@@ -114,11 +114,11 @@ def verify_signature_authorization(user_uuid, message, signature):
         bool: True if signature is valid, False otherwise
     """
     user = User.query.filter_by(uuid=user_uuid).first()
-    if not user or not user.keys or not user.keys.identity_key_public:
+    if not user or not user.keys or not user.keys.ed25519_identity_key_public:
         return False
 
     try:
-        public_key = ed25519.Ed25519PublicKey.from_public_bytes(user.keys.identity_key_public)
+        public_key = ed25519.Ed25519PublicKey.from_public_bytes(user.keys.ed25519_identity_key_public)
         public_key.verify(signature, message)
         return True
     except InvalidSignature:
@@ -214,13 +214,14 @@ def register():
         return jsonify({'error': 'Missing required user fields: uuid, username, email, salt'}), 400
         
     # Validate keys data
-    identity_key = keys_data.get('identity_key_public')
+    ed25519_identity_key = keys_data.get('ed25519_identity_key_public')
+    x25519_identity_key = keys_data.get('x25519_identity_key_public')
     signed_prekey = keys_data.get('signed_prekey_public')
     signed_prekey_signature = keys_data.get('signed_prekey_signature')
     opks = keys_data.get('opks')
     
-    if not all([identity_key, signed_prekey, signed_prekey_signature]):
-        return jsonify({'error': 'Missing required keys fields: identity_key_public, signed_prekey_public, signed_prekey_signature'}), 400
+    if not all([ed25519_identity_key, x25519_identity_key, signed_prekey, signed_prekey_signature]):
+        return jsonify({'error': 'Missing required keys fields: ed25519_identity_key_public, x25519_identity_key_public, signed_prekey_public, signed_prekey_signature'}), 400
 
     # Validate UUID format
     try:
@@ -246,7 +247,8 @@ def register():
     # Validate base64 encoding for all keys and salt
     try:
         # Decode all keys
-        identity_key_bytes = base64.b64decode(identity_key)
+        ed25519_identity_key_bytes = base64.b64decode(ed25519_identity_key)
+        x25519_identity_key_bytes = base64.b64decode(x25519_identity_key)
         signed_prekey_bytes = base64.b64decode(signed_prekey)
         signed_prekey_signature_bytes = base64.b64decode(signed_prekey_signature)
         
@@ -269,7 +271,8 @@ def register():
 
     new_user_keys = UserKeys(
         user_id=new_user.id,
-        identity_key_public=identity_key_bytes,
+        ed25519_identity_key_public=ed25519_identity_key_bytes,
+        x25519_identity_key_public=x25519_identity_key_bytes,
         signed_prekey_public=signed_prekey_bytes,
         signed_prekey_signature=signed_prekey_signature_bytes,
         opks=opks

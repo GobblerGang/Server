@@ -15,7 +15,9 @@ def get_user_by_username(username):
             "uuid": str,
             "username": str,
             "email": str,
-            "identity_key_public": str (base64 encoded),
+            "salt": str,
+            "ed25519_identity_key_public": str (base64 encoded),
+            "x25519_identity_key_public": str (base64 encoded),
             "signed_prekey_public": str (base64 encoded),
             "signed_prekey_signature": str (base64 encoded),
             "opks": dict
@@ -35,7 +37,8 @@ def get_user_by_username(username):
             'username': user.username,
             'email': user.email,
             'salt': user.salt,
-            'identity_key_public': base64.b64encode(user.keys.identity_key_public).decode('utf-8'),
+            'ed25519_identity_key_public': base64.b64encode(user.keys.ed25519_identity_key_public).decode('utf-8'),
+            'x25519_identity_key_public': base64.b64encode(user.keys.x25519_identity_key_public).decode('utf-8'),
             'signed_prekey_public': base64.b64encode(user.keys.signed_prekey_public).decode('utf-8'),
             'signed_prekey_signature': base64.b64encode(user.keys.signed_prekey_signature).decode('utf-8'),
             'opks': user.keys.opks
@@ -53,7 +56,8 @@ def get_user_keys(user_uuid):
     Returns:
         JSON response with user's public keys:
         {
-            "identity_key_public": str (base64 encoded),
+            "ed25519_identity_key_public": str (base64 encoded),
+            "x25519_identity_key_public": str (base64 encoded),
             "signed_prekey_public": str (base64 encoded),
             "signed_prekey_signature": str (base64 encoded),
             "opks": dict
@@ -69,7 +73,8 @@ def get_user_keys(user_uuid):
     
     try:
         response = {
-            'identity_key_public': base64.b64encode(user.keys.identity_key_public).decode('utf-8'),
+            'ed25519_identity_key_public': base64.b64encode(user.keys.ed25519_identity_key_public).decode('utf-8'),
+            'x25519_identity_key_public': base64.b64encode(user.keys.x25519_identity_key_public).decode('utf-8'),
             'signed_prekey_public': base64.b64encode(user.keys.signed_prekey_public).decode('utf-8'),
             'signed_prekey_signature': base64.b64encode(user.keys.signed_prekey_signature).decode('utf-8'),
             'opks': user.keys.opks
@@ -77,4 +82,4 @@ def get_user_keys(user_uuid):
         return jsonify(response), 200
     except Exception as e:
         current_app.logger.error(f"Error encoding user keys: {e}")
-        return jsonify({'error': 'Error encoding user keys'}), 500 
+        return jsonify({'error': 'Error encoding user keys'}), 500
