@@ -371,6 +371,7 @@ def revoke_access():
     pacs = data.get('pacs')
     
     # Validate all required fields are present
+    # pac doesnt need to be here as it is valid for no pacs to be provided (all are revoked)
     required_fields = {
         'file_uuid': file_uuid,
         'file_ciphertext': file_ciphertext,
@@ -379,7 +380,6 @@ def revoke_access():
         'k_file_nonce': k_file_nonce,
         'filename': filename,
         'mime_type': mime_type,
-        'pacs': pacs
     }
     
     missing_fields = [field for field, value in required_fields.items() if not value]
