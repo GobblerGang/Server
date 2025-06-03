@@ -307,49 +307,205 @@ def share_file():
         'success': True,
     }), 201
 
-@files_bp.route('/revoke/<pac_id>', methods=['POST'])
+@files_bp.route('/revoke-access', methods=['PUT'])
 @login_required
-def revoke_access(pac_id):
-    """Revoke a Pre-Authorized Access Certificate (PAC) for a shared file.
+def revoke_access():
+    """Reissue multiple PACs while removing one specific PAC and re-encrypting the file.
     
-    URL Parameters:
-        pac_id: int - The ID of the PAC to revoke
-        
+    Expected JSON payload:
+    {
+        "file_uuid": str,
+        "file_ciphertext": str (base64 encoded),
+        "file_nonce": str (base64 encoded),
+        "enc_file_k": str (base64 encoded),
+        "k_file_nonce": str (base64 encoded),
+        "filename": str,
+        "mime_type": str,
+        "pacs": [
+            {
+                "file_id": str,  # file UUID
+                "recipient_id": str,  # recipient user UUID
+                "issuer_id": str,  # issuer user UUID
+                "encrypted_file_key": str (base64 encoded),
+                "encrypted_file_key_nonce": str (base64 encoded),
+                "sender_ephemeral_pubkey": str (base64 encoded),
+                "valid_until": str (ISO format timestamp, optional),
+                "identity_key": str (base64 encoded),
+                "filename": str,
+                "mime_type": str,
+                "issuer_username": str
+            },
+            ...
+        ]
+    }
+    
     Returns:
         JSON response with success message:
         {
+            "success": bool,
             "message": str
         }
         
     Error Responses:
-        404: PAC not found or user is not the issuer
-        400: PAC is already revoked
-        500: Failed to revoke access
-        
-    Note:
-        - Only the original issuer of the PAC can revoke it
-        - Revocation is permanent and cannot be undone
-        - The file itself is not deleted, only the access is revoked
+        400: Missing required fields or invalid data
+        400: Invalid base64 encoding
+        400: Invalid date format
+        404: File not found
+        403: User is not the owner of the file
+        500: Failed to reissue PACs or update file
     """
-    current_user_uuid = g.user
-
-    # Find the PAC and verify the issuer is the current user
-    pac_to_revoke = PAC.query.filter_by(id=pac_id, issuer=current_user_uuid).first()
+    current_user = g.user
+    data = request.get_json()
     
-    if not pac_to_revoke:
-        return jsonify({'error': 'PAC not found or you are not the issuer'}), 404
-
-    if pac_to_revoke.revoked:
-        return jsonify({'error': 'PAC is already revoked'}), 400
-
+    if not data:
+        return jsonify({'error': 'No JSON data provided'}), 400
+        
+    # Extract and validate required fields
+    file_uuid = data.get('file_uuid')
+    file_ciphertext = data.get('file_ciphertext')
+    file_nonce = data.get('file_nonce')
+    enc_file_k = data.get('enc_file_k')
+    k_file_nonce = data.get('k_file_nonce')
+    filename = data.get('filename')
+    mime_type = data.get('mime_type')
+    pacs = data.get('pacs')
+    
+    # Validate all required fields are present
+    required_fields = {
+        'file_uuid': file_uuid,
+        'file_ciphertext': file_ciphertext,
+        'file_nonce': file_nonce,
+        'enc_file_k': enc_file_k,
+        'k_file_nonce': k_file_nonce,
+        'filename': filename,
+        'mime_type': mime_type,
+        'pacs': pacs
+    }
+    
+    missing_fields = [field for field, value in required_fields.items() if not value]
+    if missing_fields:
+        return jsonify({'error': f'Missing required fields: {", ".join(missing_fields)}'}), 400
+        
+    # Find the file and verify ownership
+    file_to_update = File.query.filter_by(uuid=file_uuid).first()
+    if not file_to_update:
+        return jsonify({'error': 'File not found'}), 404
+        
+    if file_to_update.owner != current_user:
+        return jsonify({'error': 'You can only update files you own'}), 403
+        
     try:
-        pac_to_revoke.revoked = True
+        # Start a transaction
+        # First update the file
+        try:
+            # Decode base64 strings to bytes
+            encrypted_blob = base64.b64decode(file_ciphertext)
+            file_nonce_bytes = base64.b64decode(file_nonce)
+            k_file_encrypted = base64.b64decode(enc_file_k)
+            k_file_nonce_bytes = base64.b64decode(k_file_nonce)
+        except ValueError:
+            return jsonify({'error': 'Invalid base64 encoding for file data'}), 400
+            
+        # Update file record
+        file_to_update.filename = filename
+        file_to_update.mime_type = mime_type
+        file_to_update.file_nonce = file_nonce_bytes
+        file_to_update.k_file_encrypted = k_file_encrypted
+        file_to_update.k_file_nonce = k_file_nonce_bytes
+        
+        # Save new encrypted file
+        try:
+            save_encrypted_file(encrypted_blob, file_to_update.uuid)
+        except Exception as e:
+            return jsonify({'error': f'Failed to save encrypted file: {str(e)}'}), 500
+            
+        # Then update PACs
+        for pac_data in pacs:
+            # Validate required fields for each PAC
+            required_fields = {
+                'file_id': pac_data.get('file_id'),
+                'recipient_id': pac_data.get('recipient_id'),
+                'issuer_id': pac_data.get('issuer_id'),
+                'encrypted_file_key': pac_data.get('encrypted_file_key'),
+                'encrypted_file_key_nonce': pac_data.get('encrypted_file_key_nonce'),
+                'sender_ephemeral_pubkey': pac_data.get('sender_ephemeral_pubkey'),
+                'identity_key': pac_data.get('identity_key'),
+                'filename': pac_data.get('filename'),
+                'mime_type': pac_data.get('mime_type'),
+                'issuer_username': pac_data.get('issuer_username')
+            }
+            
+            missing_fields = [field for field, value in required_fields.items() if not value]
+            if missing_fields:
+                return jsonify({'error': f'Missing required fields for PAC: {", ".join(missing_fields)}'}), 400
+                
+            # Find recipient and issuer users
+            recipient = User.query.filter_by(uuid=pac_data['recipient_id']).first()
+            if not recipient:
+                return jsonify({'error': f'Recipient user not found: {pac_data["recipient_id"]}'}), 404
+                
+            issuer = User.query.filter_by(uuid=pac_data['issuer_id']).first()
+            if not issuer:
+                return jsonify({'error': f'Issuer user not found: {pac_data["issuer_id"]}'}), 404
+                
+            try:
+                # Convert base64 strings to bytes
+                encrypted_file_key_bytes = base64.b64decode(pac_data['encrypted_file_key'])
+                encrypted_file_key_nonce_bytes = base64.b64decode(pac_data['encrypted_file_key_nonce'])
+                sender_ephemeral_pubkey_bytes = base64.b64decode(pac_data['sender_ephemeral_pubkey'])
+                identity_key_bytes = base64.b64decode(pac_data['identity_key'])
+            except ValueError:
+                return jsonify({'error': 'Invalid base64 encoding for key, signature, or nonce'}), 400
+                
+            valid_until_dt = None
+            if pac_data.get('valid_until'):
+                try:
+                    valid_until_dt = datetime.fromisoformat(pac_data['valid_until'])
+                except ValueError:
+                    return jsonify({'error': 'Invalid date format for valid_until (expected ISO 8601)'}), 400
+                    
+            # Create or update PAC
+            existing_pac = PAC.query.filter_by(
+                file=file_to_update,
+                recipient=recipient,
+                issuer=issuer
+            ).first()
+            
+            if existing_pac:
+                # Update existing PAC
+                existing_pac.encrypted_file_key = encrypted_file_key_bytes
+                existing_pac.k_file_nonce = encrypted_file_key_nonce_bytes
+                existing_pac.sender_ephemeral_public_key = sender_ephemeral_pubkey_bytes
+                existing_pac.valid_until = valid_until_dt
+                existing_pac.revoked = False
+                existing_pac.signature = identity_key_bytes
+            else:
+                # Create new PAC
+                new_pac = PAC(
+                    file=file_to_update,
+                    recipient=recipient,
+                    issuer=issuer,
+                    encrypted_file_key=encrypted_file_key_bytes,
+                    k_file_nonce=encrypted_file_key_nonce_bytes,
+                    sender_ephemeral_public_key=sender_ephemeral_pubkey_bytes,
+                    valid_until=valid_until_dt,
+                    revoked=False,
+                    signature=identity_key_bytes
+                )
+                db.session.add(new_pac)
+        
+        # Commit all changes
         db.session.commit()
-        return jsonify({'message': 'Access revoked successfully'}), 200
+        
+        return jsonify({
+            'success': True,
+            'message': 'File and PACs reissued successfully'
+        }), 200
+        
     except Exception as e:
         db.session.rollback()
-        current_app.logger.error(f"Error revoking PAC: {e}")
-        return jsonify({'error': 'Failed to revoke access'}), 500
+        current_app.logger.error(f"Error reissuing file and PACs: {e}")
+        return jsonify({'error': 'Failed to reissue file and PACs'}), 500
 
 @files_bp.route('/delete/<file_uuid>', methods=['DELETE'])
 @login_required
@@ -480,7 +636,7 @@ def get_pacs():
     received_pacs = get_user_pacs(current_user.id, is_recipient=True)
     
     return jsonify({
-        'issued': issued_pacs,
+        'issued_pacs': issued_pacs,
         'received_pacs': received_pacs
     }), 200
 
