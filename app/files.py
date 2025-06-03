@@ -141,7 +141,10 @@ def download_file(file_uuid):
     Returns:
         JSON response with encrypted file data:
         {
-            "encrypted_blob": str (base64 encoded)
+            "encrypted_blob": str (base64 encoded),
+            "file_nonce": str (base64 encoded),
+            "filename": str,
+            "mime_type": str
         }
         
     Error Responses:
@@ -183,9 +186,11 @@ def download_file(file_uuid):
     try:
         with open(file_path, 'rb') as f:
             encrypted_blob = f.read()
-            
         return jsonify({
-            'encrypted_blob': base64.b64encode(encrypted_blob).decode('utf-8')
+            'encrypted_blob': base64.b64encode(encrypted_blob).decode('utf-8'),
+            'file_nonce': base64.b64encode(file_to_download.file_nonce).decode('utf-8'),
+            'filename': file_to_download.filename,
+            'mime_type': file_to_download.mime_type
         }), 200
     except Exception as e:
         current_app.logger.error(f"Error reading encrypted file: {e}")
@@ -554,4 +559,4 @@ def get_file_info(file_uuid):
         return jsonify(response), 200
     except Exception as e:
         current_app.logger.error(f"Error encoding file info: {e}")
-        return jsonify({'error': 'Error encoding file information'}), 500 
+        return jsonify({'error': 'Error encoding file information'}), 500
