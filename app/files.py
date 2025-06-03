@@ -419,8 +419,21 @@ def revoke_access():
         except Exception as e:
             return jsonify({'error': f'Failed to save encrypted file: {str(e)}'}), 500
             
-        # Then update PACs
+        new_pac_pairs = set()
         for pac_data in pacs:
+            new_pac_pairs.add((
+                pac_data.get('recipient_id'),
+                pac_data.get('issuer_id')
+            ))
+
+        existing_pacs = PAC.query.filter_by(file_id=file_to_update.id).all()
+
+        for pac in existing_pacs:
+            pair = (pac.recipient.uuid, pac.issuer.uuid)
+            if pair not in new_pac_pairs:
+                db.session.delete(pac)
+        for pac_data in pacs:
+            
             # Validate required fields for each PAC
             required_fields = {
                 'file_id': pac_data.get('file_id'),
@@ -438,6 +451,11 @@ def revoke_access():
             missing_fields = [field for field, value in required_fields.items() if not value]
             if missing_fields:
                 return jsonify({'error': f'Missing required fields for PAC: {", ".join(missing_fields)}'}), 400
+            
+            new_pac_pairs.add((
+                pac_data.get('recipient_id'),
+                pac_data.get('issuer_id')
+            ))
                 
             # Find recipient and issuer users
             recipient = User.query.filter_by(uuid=pac_data['recipient_id']).first()
@@ -495,6 +513,7 @@ def revoke_access():
                 db.session.add(new_pac)
         
         # Commit all changes
+        
         db.session.commit()
         
         return jsonify({
