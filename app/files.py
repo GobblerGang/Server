@@ -310,11 +310,19 @@ def share_file():
 @files_bp.route('/reissue-pacs', methods=['PUT'])
 @login_required
 def reissue_pacs():
-    """Reissue multiple PACs while removing one specific PAC.
+    """Reissue multiple PACs while removing one specific PAC and re-encrypting the file.
     
     Expected JSON payload:
     {
         "pac_to_remove": int,  # ID of the PAC to remove
+        "file_update": {
+            "file_uuid": str,
+            "file_blob": str (base64 encoded),  # The actual encrypted file data
+            "enc_file_ciphertext": str (base64 encoded),
+            "file_nonce": str (base64 encoded),
+            "enc_file_k": str (base64 encoded),
+            "k_file_nonce": str (base64 encoded)
+        },
         "pacs_to_reissue": [
             {
                 "pac_id": int,  # ID of existing PAC to update
@@ -341,7 +349,9 @@ def reissue_pacs():
         400: Invalid date format
         404: PAC to remove not found or user is not the issuer
         404: PAC to update not found or user is not the issuer
-        500: Failed to reissue PACs
+        404: File not found
+        403: User is not the owner of the file
+        500: Failed to reissue PACs or update file
     """
     current_user = g.user
     data = request.get_json()
@@ -352,9 +362,32 @@ def reissue_pacs():
     # Extract and validate required fields
     pac_to_remove_id = data.get('pac_to_remove')
     pacs_to_reissue = data.get('pacs_to_reissue')
+    file_update = data.get('file_update')
     
-    if not pac_to_remove_id or not pacs_to_reissue:
-        return jsonify({'error': 'Missing required fields: pac_to_remove or pacs_to_reissue'}), 400
+    if not all([pac_to_remove_id, pacs_to_reissue, file_update]):
+        return jsonify({'error': 'Missing required fields: pac_to_remove, pacs_to_reissue, or file_update'}), 400
+        
+    # Validate file update data
+    required_file_fields = {
+        'file_uuid': file_update.get('file_uuid'),
+        'file_blob': file_update.get('file_blob'),
+        'enc_file_ciphertext': file_update.get('enc_file_ciphertext'),
+        'file_nonce': file_update.get('file_nonce'),
+        'enc_file_k': file_update.get('enc_file_k'),
+        'k_file_nonce': file_update.get('k_file_nonce')
+    }
+    
+    missing_file_fields = [field for field, value in required_file_fields.items() if not value]
+    if missing_file_fields:
+        return jsonify({'error': f'Missing required file fields: {", ".join(missing_file_fields)}'}), 400
+        
+    # Find the file and verify ownership
+    file_to_update = File.query.filter_by(uuid=file_update['file_uuid']).first()
+    if not file_to_update:
+        return jsonify({'error': 'File not found'}), 404
+        
+    if file_to_update.owner != current_user:
+        return jsonify({'error': 'You can only update files you own'}), 403
         
     # Find the PAC to remove and verify the issuer is the current user
     pac_to_remove = PAC.query.filter_by(id=pac_to_remove_id, issuer=current_user).first()
@@ -363,6 +396,29 @@ def reissue_pacs():
         
     try:
         # Start a transaction
+        # First update the file
+        try:
+            # Decode base64 strings to bytes
+            file_blob = base64.b64decode(file_update['file_blob'])
+            encrypted_blob = base64.b64decode(file_update['enc_file_ciphertext'])
+            file_nonce_bytes = base64.b64decode(file_update['file_nonce'])
+            k_file_encrypted = base64.b64decode(file_update['enc_file_k'])
+            k_file_nonce_bytes = base64.b64decode(file_update['k_file_nonce'])
+        except ValueError:
+            return jsonify({'error': 'Invalid base64 encoding for file data'}), 400
+            
+        # Update file record
+        file_to_update.file_nonce = file_nonce_bytes
+        file_to_update.k_file_encrypted = k_file_encrypted
+        file_to_update.k_file_nonce = k_file_nonce_bytes
+        
+        # Save new encrypted file
+        try:
+            save_encrypted_file(file_blob, file_to_update.uuid)
+        except Exception as e:
+            return jsonify({'error': f'Failed to save encrypted file: {str(e)}'}), 500
+            
+        # Then update PACs
         for pac_data in pacs_to_reissue:
             # Validate required fields for each PAC
             required_fields = {
@@ -414,13 +470,13 @@ def reissue_pacs():
         
         return jsonify({
             'success': True,
-            'message': 'PACs reissued successfully'
+            'message': 'File and PACs reissued successfully'
         }), 200
         
     except Exception as e:
         db.session.rollback()
-        current_app.logger.error(f"Error reissuing PACs: {e}")
-        return jsonify({'error': 'Failed to reissue PACs'}), 500
+        current_app.logger.error(f"Error reissuing file and PACs: {e}")
+        return jsonify({'error': 'Failed to reissue file and PACs'}), 500
 
 @files_bp.route('/delete/<file_uuid>', methods=['DELETE'])
 @login_required
