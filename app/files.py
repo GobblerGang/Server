@@ -307,9 +307,9 @@ def share_file():
         'success': True,
     }), 201
 
-@files_bp.route('/reissue-pacs', methods=['PUT'])
+@files_bp.route('/revoke-access', methods=['PUT'])
 @login_required
-def reissue_pacs():
+def revoke_access():
     """Reissue multiple PACs while removing one specific PAC and re-encrypting the file.
     
     Expected JSON payload:
