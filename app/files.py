@@ -5,7 +5,7 @@ from .auth import login_required
 from .models import db, User, File, PAC
 from datetime import datetime
 import base64
-from .. import limiter
+from app import limiter
 
 files_bp = Blueprint('files', __name__)
 
@@ -39,7 +39,7 @@ def save_encrypted_file(encrypted_blob: bytes, file_uuid: str) -> bool:
 
 @files_bp.route('/upload', methods=['POST'])
 @login_required
-@limiter.limit("10 per minute")
+@limiter.limit("10 per second")
 def upload_file():
     current_user = g.user
     data = request.get_json()
@@ -111,7 +111,7 @@ def upload_file():
 
 @files_bp.route('/download/<file_uuid>', methods=['GET'])
 @login_required
-@limiter.limit("30 per minute")
+@limiter.limit("30 per second")
 def download_file(file_uuid):
     current_user = g.user
 
@@ -152,7 +152,7 @@ def download_file(file_uuid):
 
 @files_bp.route('/share', methods=['POST'])
 @login_required
-@limiter.limit("20 per minute")
+@limiter.limit("20 per second")
 def share_file():
     issuer_user = g.user
     data = request.get_json()
@@ -229,7 +229,7 @@ def share_file():
 
 @files_bp.route('/revoke/<pac_id>', methods=['POST'])
 @login_required
-@limiter.limit("20 per minute")
+@limiter.limit("20 per second")
 def revoke_access(pac_id):
     current_user_uuid = g.user
 

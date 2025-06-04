@@ -10,7 +10,7 @@ from datetime import datetime, timedelta, timezone
 import secrets
 import os
 import base64
-from .. import limiter
+from app import limiter
 
 NONCE_LIFESPAN = int(os.getenv('NONCE_LIFESPAN', 300)) 
 TIMESTAMP_TOLERANCE = int(os.getenv('TIMESTAMP_TOLERANCE', 10)) 
@@ -131,7 +131,7 @@ def verify_signature_authorization(user_uuid, payload, signature):
         return False
 
 @auth_bp.route('/register', methods=['POST'])
-@limiter.limit("5 per minute")
+@limiter.limit("5 per second")
 def register():
     """Expected JSON input body structure:
     {
@@ -198,7 +198,7 @@ def register():
     }), 201
 
 @auth_bp.route('/login', methods=['POST'])
-@limiter.limit("5 per minute")
+@limiter.limit("5 per second")
 def login():
     # Authenticate user using signature verification and nonce validation
     success, user, error_message, status_code = verify_request_auth()
@@ -211,7 +211,7 @@ def login():
     }), 200
 
 @auth_bp.route('/nonce', methods=['POST'])
-@limiter.limit("30 per minute")
+@limiter.limit("30 per second")
 def get_nonce():
     """Generate a new nonce for a user.
     Expected JSON input:
