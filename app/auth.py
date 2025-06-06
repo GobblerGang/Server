@@ -42,7 +42,7 @@ def verify_request_auth():
     payload = request.get_data()
     if not payload:
         # return False, None, 'Authentication failed: Request payload is required for signature verification', 401
-        payload = b""
+        payload = b"{}"
 
     # Verify the nonce
     db_nonce = Nonce.query.filter_by(user_uuid=user_uuid, nonce=nonce, used=False).first()
