@@ -4,6 +4,7 @@ from .auth import login_required
 from .models import db, User, File, PAC
 from datetime import datetime
 import base64
+from . import limiter
 
 files_bp = Blueprint('files', __name__)
 
@@ -37,6 +38,7 @@ def save_encrypted_file(encrypted_blob: bytes, file_uuid: str) -> bool:
 
 @files_bp.route('/upload', methods=['POST'])
 @login_required
+@limiter.limit("10 per second")
 def upload_file():
     """Upload an encrypted file to the server.
     
@@ -132,6 +134,7 @@ def upload_file():
 
 @files_bp.route('/download/<file_uuid>', methods=['GET'])
 @login_required
+@limiter.limit("10 per second")
 def download_file(file_uuid):
     """Download an encrypted file from the server.
     
@@ -198,6 +201,7 @@ def download_file(file_uuid):
 
 @files_bp.route('/share', methods=['POST'])
 @login_required
+@limiter.limit("10 per second")
 def share_file():
     """Share a file with another user by creating a Pre-Authorized Access Certificate (PAC).
     
@@ -309,6 +313,7 @@ def share_file():
 
 @files_bp.route('/revoke-access', methods=['PUT'])
 @login_required
+@limiter.limit("10 per second")
 def revoke_access():
     """Reissue multiple PACs while removing one specific PAC and re-encrypting the file.
     
@@ -528,6 +533,7 @@ def revoke_access():
 
 @files_bp.route('/delete/<file_uuid>', methods=['DELETE'])
 @login_required
+@limiter.limit("10 per second")
 def delete_file(file_uuid):
     """Delete a file and all its associated PACs.
     

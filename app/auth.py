@@ -7,6 +7,7 @@ import secrets
 import os
 import base64
 import uuid
+from . import limiter
 
 NONCE_LIFESPAN = int(os.getenv('NONCE_LIFESPAN', 300)) 
 TIMESTAMP_TOLERANCE = int(os.getenv('TIMESTAMP_TOLERANCE', 10)) 
@@ -164,6 +165,7 @@ def create_kek(user, kek_data):
         return False, 'Failed to create KEK', 500
 
 @auth_bp.route('/register', methods=['POST'])
+@limiter.limit("10 per second")
 def register():
     """Expected JSON input body structure:
     {
@@ -297,6 +299,7 @@ def register():
     }), 201
 
 @auth_bp.route('/nonce/<user_uuid>', methods=['GET'])
+@limiter.limit("10 per second")
 def get_nonce(user_uuid):
     """Generate a new nonce for a user.
     Expected JSON input:
@@ -341,6 +344,7 @@ def get_nonce(user_uuid):
     }), 200
 
 @auth_bp.route('/generate-uuid', methods=['GET'])
+@limiter.limit("10 per second")
 def generate_uuid():
     """Generate a unique UUID for user registration.
     
@@ -375,6 +379,7 @@ def generate_uuid():
     }), 500
 
 @auth_bp.route('/change-password', methods=['PUT'])
+@limiter.limit("10 per second")
 @login_required
 def change_password():
     """Update user's Key Encryption Key (KEK) after password change.
@@ -445,6 +450,7 @@ def change_password():
         return jsonify({'error': 'Failed to update KEK'}), 500
 
 @auth_bp.route('/kek/<user_uuid>', methods=['GET'])
+@limiter.limit("10 per second")
 def get_kek(user_uuid):
     """Get the user's Key Encryption Key (KEK).
     

@@ -7,11 +7,14 @@ from dotenv import load_dotenv
 import logging
 from urllib.parse import quote_plus # Import quote_plus for URL encoding
 from flask_apscheduler import APScheduler # Import APScheduler
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
 
 load_dotenv()
 
 db = SQLAlchemy()
 scheduler = APScheduler() # Initialize scheduler
+limiter = Limiter(key_func=get_remote_address) # Initialize limiter
 
 # In-memory storage for used nonces (for development only)
 # In production, use a database or distributed cache
@@ -22,12 +25,17 @@ from .auth import cleanup_old_nonces # Import the cleanup function
 def create_app(config_name='default'):
     app = Flask(__name__)
     CORS(app)
+    limiter.init_app(app)  # Initialize limiter with app
 
     # Configuration from environment variables
     app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY') or 'a-very-hard-to-guess-string'
     
     # Set debug mode based on config
     app.config['DEBUG'] = config_name == 'development'
+    
+    # Rate limiter configuration
+    app.config['RATELIMIT_DEFAULT'] = "10 per second"
+    app.config['RATELIMIT_STORAGE_URL'] = "memory://"
     
     # Database configuration using individual environment variables
     db_user = os.getenv("DB_USER")
